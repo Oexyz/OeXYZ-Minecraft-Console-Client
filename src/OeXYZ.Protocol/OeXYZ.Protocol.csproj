@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>OeXYZ.Protocol</AssemblyName>
+    <RootNamespace>OeXYZ.Protocol</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\protocol-catalog.json" />
+  </ItemGroup>
+</Project>

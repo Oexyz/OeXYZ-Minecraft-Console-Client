@@ -1,0 +1,3876 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "name": "PrismarineJS minecraft-data",
+    "packageVersion": "3.113.0",
+    "license": "MIT",
+    "repository": "https://github.com/PrismarineJS/minecraft-data"
+  },
+  "supportedRange": {
+    "minimum": "1.8",
+    "maximum": "26.2"
+  },
+  "versions": [
+    {
+      "minecraftVersion": "1.8",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.1",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.2",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.3",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.3",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.4",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.4",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.5",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.5",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.6",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.6",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.7",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.7",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.8",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.8",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.8.9",
+      "protocolVersion": 47,
+      "schemaVersion": "1.8.9",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 1,
+          "keep_alive": 0,
+          "kick_disconnect": 64,
+          "position": 8,
+          "chat": 2,
+          "update_health": 6,
+          "respawn": 7
+        },
+        "playServerbound": {
+          "keep_alive": 0,
+          "settings": 21,
+          "custom_payload": 23,
+          "chat": 1,
+          "client_command": 22,
+          "position": 4,
+          "position_look": 6,
+          "resource_pack_receive": 25
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.9",
+      "protocolVersion": 107,
+      "schemaVersion": "1.9",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.9.1",
+      "protocolVersion": 108,
+      "schemaVersion": "1.9.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.9.2",
+      "protocolVersion": 109,
+      "schemaVersion": "1.9.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.9.3",
+      "protocolVersion": 110,
+      "schemaVersion": "1.9.3",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.9.4",
+      "protocolVersion": 110,
+      "schemaVersion": "1.9.4",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.10",
+      "protocolVersion": 210,
+      "schemaVersion": "1.10",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.10.1",
+      "protocolVersion": 210,
+      "schemaVersion": "1.10.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.10.2",
+      "protocolVersion": 210,
+      "schemaVersion": "1.10.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.11",
+      "protocolVersion": 315,
+      "schemaVersion": "1.11",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.11.1",
+      "protocolVersion": 316,
+      "schemaVersion": "1.11.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.11.2",
+      "protocolVersion": 316,
+      "schemaVersion": "1.11.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 62,
+          "respawn": 51
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 12,
+          "position_look": 13,
+          "resource_pack_receive": 22
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.12",
+      "protocolVersion": 335,
+      "schemaVersion": "1.12",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 46,
+          "chat": 15,
+          "update_health": 64,
+          "respawn": 52
+        },
+        "playServerbound": {
+          "keep_alive": 12,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 14,
+          "position_look": 15,
+          "resource_pack_receive": 24
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.12.1",
+      "protocolVersion": 338,
+      "schemaVersion": "1.12.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 47,
+          "chat": 15,
+          "update_health": 65,
+          "respawn": 53
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 13,
+          "position_look": 14,
+          "resource_pack_receive": 24
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.12.2",
+      "protocolVersion": 340,
+      "schemaVersion": "1.12.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 31,
+          "kick_disconnect": 26,
+          "position": 47,
+          "chat": 15,
+          "update_health": 65,
+          "respawn": 53
+        },
+        "playServerbound": {
+          "keep_alive": 11,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 9,
+          "chat": 2,
+          "client_command": 3,
+          "position": 13,
+          "position_look": 14,
+          "resource_pack_receive": 24
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.13",
+      "protocolVersion": 393,
+      "schemaVersion": "1.13",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 50,
+          "chat": 14,
+          "update_health": 68,
+          "respawn": 56
+        },
+        "playServerbound": {
+          "keep_alive": 14,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 10,
+          "chat": 2,
+          "client_command": 3,
+          "position": 16,
+          "position_look": 17,
+          "resource_pack_receive": 29
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.13.1",
+      "protocolVersion": 401,
+      "schemaVersion": "1.13.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 50,
+          "chat": 14,
+          "update_health": 68,
+          "respawn": 56
+        },
+        "playServerbound": {
+          "keep_alive": 14,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 10,
+          "chat": 2,
+          "client_command": 3,
+          "position": 16,
+          "position_look": 17,
+          "resource_pack_receive": 29
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.13.2",
+      "protocolVersion": 404,
+      "schemaVersion": "1.13.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 50,
+          "chat": 14,
+          "update_health": 68,
+          "respawn": 56
+        },
+        "playServerbound": {
+          "keep_alive": 14,
+          "teleport_confirm": 0,
+          "settings": 4,
+          "custom_payload": 10,
+          "chat": 2,
+          "client_command": 3,
+          "position": 16,
+          "position_look": 17,
+          "resource_pack_receive": 29
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.14",
+      "protocolVersion": 477,
+      "schemaVersion": "1.14",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 72,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.14.1",
+      "protocolVersion": 480,
+      "schemaVersion": "1.14.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 72,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.14.2",
+      "protocolVersion": 485,
+      "schemaVersion": "1.14.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 72,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.14.3",
+      "protocolVersion": 490,
+      "schemaVersion": "1.14.3",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 72,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.14.4",
+      "protocolVersion": 498,
+      "schemaVersion": "1.14.4",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 72,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.15",
+      "protocolVersion": 573,
+      "schemaVersion": "1.15",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 54,
+          "chat": 15,
+          "update_health": 73,
+          "respawn": 59
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.15.1",
+      "protocolVersion": 575,
+      "schemaVersion": "1.15.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 54,
+          "chat": 15,
+          "update_health": 73,
+          "respawn": 59
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.15.2",
+      "protocolVersion": 578,
+      "schemaVersion": "1.15.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 27,
+          "position": 54,
+          "chat": 15,
+          "update_health": 73,
+          "respawn": 59
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "resource_pack_receive": 31
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16",
+      "protocolVersion": 735,
+      "schemaVersion": "1.16",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 32
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16.1",
+      "protocolVersion": 736,
+      "schemaVersion": "1.16.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 26,
+          "position": 53,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 58
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 32
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16.2",
+      "protocolVersion": 751,
+      "schemaVersion": "1.16.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 36,
+          "keep_alive": 31,
+          "kick_disconnect": 25,
+          "position": 52,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 57
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16.3",
+      "protocolVersion": 753,
+      "schemaVersion": "1.16.3",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 36,
+          "keep_alive": 31,
+          "kick_disconnect": 25,
+          "position": 52,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 57
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16.4",
+      "protocolVersion": 754,
+      "schemaVersion": "1.16.4",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 36,
+          "keep_alive": 31,
+          "kick_disconnect": 25,
+          "position": 52,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 57
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.16.5",
+      "protocolVersion": 754,
+      "schemaVersion": "1.16.5",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 36,
+          "keep_alive": 31,
+          "kick_disconnect": 25,
+          "position": 52,
+          "chat": 14,
+          "update_health": 73,
+          "respawn": 57
+        },
+        "playServerbound": {
+          "keep_alive": 16,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 11,
+          "chat": 3,
+          "client_command": 4,
+          "position": 18,
+          "position_look": 19,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.17",
+      "protocolVersion": 755,
+      "schemaVersion": "1.17",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 26,
+          "position": 56,
+          "chat": 15,
+          "update_health": 82,
+          "death_combat_event": 53,
+          "respawn": 61,
+          "ping": 48
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "pong": 29,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.17.1",
+      "protocolVersion": 756,
+      "schemaVersion": "1.17.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 26,
+          "position": 56,
+          "chat": 15,
+          "update_health": 82,
+          "death_combat_event": 53,
+          "respawn": 61,
+          "ping": 48
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "pong": 29,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.18",
+      "protocolVersion": 757,
+      "schemaVersion": "1.18",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 26,
+          "position": 56,
+          "chat": 15,
+          "update_health": 82,
+          "death_combat_event": 53,
+          "respawn": 61,
+          "ping": 48
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "pong": 29,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.18.1",
+      "protocolVersion": 757,
+      "schemaVersion": "1.18.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 26,
+          "position": 56,
+          "chat": 15,
+          "update_health": 82,
+          "death_combat_event": 53,
+          "respawn": 61,
+          "ping": 48
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "pong": 29,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.18.2",
+      "protocolVersion": 758,
+      "schemaVersion": "1.18.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 38,
+          "keep_alive": 33,
+          "kick_disconnect": 26,
+          "position": 56,
+          "chat": 15,
+          "update_health": 82,
+          "death_combat_event": 53,
+          "respawn": 61,
+          "ping": 48
+        },
+        "playServerbound": {
+          "keep_alive": 15,
+          "teleport_confirm": 0,
+          "settings": 5,
+          "custom_payload": 10,
+          "chat": 3,
+          "client_command": 4,
+          "position": 17,
+          "position_look": 18,
+          "pong": 29,
+          "resource_pack_receive": 33
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.19",
+      "protocolVersion": 759,
+      "schemaVersion": "1.19",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 30,
+          "kick_disconnect": 23,
+          "position": 54,
+          "system_chat": 95,
+          "player_chat": 48,
+          "update_health": 82,
+          "death_combat_event": 51,
+          "respawn": 59,
+          "ping": 45
+        },
+        "playServerbound": {
+          "keep_alive": 17,
+          "teleport_confirm": 0,
+          "settings": 7,
+          "custom_payload": 12,
+          "chat_message": 4,
+          "chat_command": 3,
+          "client_command": 6,
+          "position": 19,
+          "position_look": 20,
+          "pong": 31,
+          "resource_pack_receive": 35
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.19.1",
+      "protocolVersion": 760,
+      "schemaVersion": "1.19.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 35,
+          "keep_alive": 30,
+          "kick_disconnect": 23,
+          "position": 54,
+          "system_chat": 95,
+          "player_chat": 48,
+          "update_health": 82,
+          "death_combat_event": 51,
+          "respawn": 59,
+          "ping": 45
+        },
+        "playServerbound": {
+          "keep_alive": 17,
+          "teleport_confirm": 0,
+          "settings": 7,
+          "custom_payload": 12,
+          "chat_message": 4,
+          "chat_command": 3,
+          "client_command": 6,
+          "position": 19,
+          "position_look": 20,
+          "pong": 31,
+          "resource_pack_receive": 35
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.19.2",
+      "protocolVersion": 760,
+      "schemaVersion": "1.19.2",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 37,
+          "keep_alive": 32,
+          "kick_disconnect": 25,
+          "position": 57,
+          "system_chat": 98,
+          "player_chat": 51,
+          "update_health": 85,
+          "death_combat_event": 54,
+          "respawn": 62,
+          "ping": 47
+        },
+        "playServerbound": {
+          "keep_alive": 18,
+          "teleport_confirm": 0,
+          "settings": 8,
+          "custom_payload": 13,
+          "chat_message": 5,
+          "chat_command": 4,
+          "client_command": 7,
+          "position": 20,
+          "position_look": 21,
+          "pong": 32,
+          "resource_pack_receive": 36
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.19.3",
+      "protocolVersion": 761,
+      "schemaVersion": "1.19.3",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 36,
+          "keep_alive": 31,
+          "kick_disconnect": 23,
+          "position": 56,
+          "system_chat": 96,
+          "player_chat": 49,
+          "profileless_chat": 24,
+          "update_health": 83,
+          "death_combat_event": 52,
+          "respawn": 61,
+          "ping": 46
+        },
+        "playServerbound": {
+          "keep_alive": 17,
+          "teleport_confirm": 0,
+          "settings": 7,
+          "custom_payload": 12,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 32,
+          "client_command": 6,
+          "position": 19,
+          "position_look": 20,
+          "pong": 31,
+          "resource_pack_receive": 36
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.19.4",
+      "protocolVersion": 762,
+      "schemaVersion": "1.19.4",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 40,
+          "keep_alive": 35,
+          "kick_disconnect": 26,
+          "position": 60,
+          "system_chat": 100,
+          "player_chat": 53,
+          "profileless_chat": 27,
+          "update_health": 87,
+          "death_combat_event": 56,
+          "respawn": 65,
+          "ping": 50
+        },
+        "playServerbound": {
+          "keep_alive": 18,
+          "teleport_confirm": 0,
+          "settings": 8,
+          "custom_payload": 13,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 7,
+          "position": 20,
+          "position_look": 21,
+          "pong": 32,
+          "resource_pack_receive": 36
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20",
+      "protocolVersion": 763,
+      "schemaVersion": "1.20",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 40,
+          "keep_alive": 35,
+          "kick_disconnect": 26,
+          "position": 60,
+          "system_chat": 100,
+          "player_chat": 53,
+          "profileless_chat": 27,
+          "update_health": 87,
+          "death_combat_event": 56,
+          "respawn": 65,
+          "ping": 50
+        },
+        "playServerbound": {
+          "keep_alive": 18,
+          "teleport_confirm": 0,
+          "settings": 8,
+          "custom_payload": 13,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 7,
+          "position": 20,
+          "position_look": 21,
+          "pong": 32,
+          "resource_pack_receive": 36
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.1",
+      "protocolVersion": 763,
+      "schemaVersion": "1.20.1",
+      "hasConfiguration": false,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2
+        },
+        "configurationClientbound": {},
+        "configurationServerbound": {},
+        "playClientbound": {
+          "login": 40,
+          "keep_alive": 35,
+          "kick_disconnect": 26,
+          "position": 60,
+          "system_chat": 100,
+          "player_chat": 53,
+          "profileless_chat": 27,
+          "update_health": 87,
+          "death_combat_event": 56,
+          "respawn": 65,
+          "ping": 50
+        },
+        "playServerbound": {
+          "keep_alive": 18,
+          "teleport_confirm": 0,
+          "settings": 8,
+          "custom_payload": 13,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 7,
+          "position": 20,
+          "position_look": 21,
+          "pong": 32,
+          "resource_pack_receive": 36
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.2",
+      "protocolVersion": 764,
+      "schemaVersion": "1.20.2",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3
+        },
+        "configurationClientbound": {
+          "custom_payload": 0,
+          "disconnect": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "ping": 4,
+          "registry_data": 5
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "pong": 4,
+          "resource_pack_receive": 5
+        },
+        "playClientbound": {
+          "login": 41,
+          "keep_alive": 36,
+          "kick_disconnect": 27,
+          "position": 62,
+          "system_chat": 103,
+          "player_chat": 55,
+          "profileless_chat": 28,
+          "update_health": 89,
+          "death_combat_event": 58,
+          "respawn": 67,
+          "start_configuration": 101,
+          "ping": 51
+        },
+        "playServerbound": {
+          "keep_alive": 20,
+          "teleport_confirm": 0,
+          "settings": 9,
+          "custom_payload": 15,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 8,
+          "position": 22,
+          "position_look": 23,
+          "configuration_acknowledged": 11,
+          "pong": 35,
+          "resource_pack_receive": 39
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.3",
+      "protocolVersion": 765,
+      "schemaVersion": "1.20.3",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3
+        },
+        "configurationClientbound": {
+          "custom_payload": 0,
+          "disconnect": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "ping": 4,
+          "registry_data": 5,
+          "add_resource_pack": 7,
+          "remove_resource_pack": 6
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "pong": 4,
+          "resource_pack_receive": 5
+        },
+        "playClientbound": {
+          "login": 41,
+          "keep_alive": 36,
+          "kick_disconnect": 27,
+          "position": 62,
+          "system_chat": 105,
+          "player_chat": 55,
+          "profileless_chat": 28,
+          "update_health": 91,
+          "death_combat_event": 58,
+          "respawn": 69,
+          "start_configuration": 103,
+          "ping": 51,
+          "add_resource_pack": 68,
+          "remove_resource_pack": 67
+        },
+        "playServerbound": {
+          "keep_alive": 21,
+          "teleport_confirm": 0,
+          "settings": 9,
+          "custom_payload": 16,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 8,
+          "position": 23,
+          "position_look": 24,
+          "configuration_acknowledged": 11,
+          "pong": 36,
+          "resource_pack_receive": 40
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.4",
+      "protocolVersion": 765,
+      "schemaVersion": "1.20.4",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3
+        },
+        "configurationClientbound": {
+          "custom_payload": 0,
+          "disconnect": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "ping": 4,
+          "registry_data": 5,
+          "add_resource_pack": 7,
+          "remove_resource_pack": 6
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 1,
+          "finish_configuration": 2,
+          "keep_alive": 3,
+          "pong": 4,
+          "resource_pack_receive": 5
+        },
+        "playClientbound": {
+          "login": 41,
+          "keep_alive": 36,
+          "kick_disconnect": 27,
+          "position": 62,
+          "system_chat": 105,
+          "player_chat": 55,
+          "profileless_chat": 28,
+          "update_health": 91,
+          "death_combat_event": 58,
+          "respawn": 69,
+          "start_configuration": 103,
+          "ping": 51,
+          "add_resource_pack": 68,
+          "remove_resource_pack": 67
+        },
+        "playServerbound": {
+          "keep_alive": 21,
+          "teleport_confirm": 0,
+          "settings": 9,
+          "custom_payload": 16,
+          "chat_message": 5,
+          "chat_command": 4,
+          "chat_session_update": 6,
+          "client_command": 8,
+          "position": 23,
+          "position_look": 24,
+          "configuration_acknowledged": 11,
+          "pong": 36,
+          "resource_pack_receive": 40
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.5",
+      "protocolVersion": 766,
+      "schemaVersion": "1.20.5",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.20.6",
+      "protocolVersion": 766,
+      "schemaVersion": "1.20.6",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21",
+      "protocolVersion": 767,
+      "schemaVersion": "1.21",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.1",
+      "protocolVersion": 767,
+      "schemaVersion": "1.21.1",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.2",
+      "protocolVersion": 768,
+      "schemaVersion": "1.21.2",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.3",
+      "protocolVersion": 768,
+      "schemaVersion": "1.21.3",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 44,
+          "keep_alive": 39,
+          "kick_disconnect": 29,
+          "position": 66,
+          "system_chat": 115,
+          "player_chat": 59,
+          "profileless_chat": 30,
+          "update_health": 98,
+          "death_combat_event": 62,
+          "respawn": 76,
+          "start_configuration": 112,
+          "ping": 55,
+          "add_resource_pack": 75,
+          "remove_resource_pack": 74
+        },
+        "playServerbound": {
+          "keep_alive": 26,
+          "teleport_confirm": 0,
+          "settings": 12,
+          "custom_payload": 20,
+          "chat_message": 7,
+          "chat_command": 5,
+          "chat_session_update": 8,
+          "client_command": 10,
+          "position": 28,
+          "position_look": 29,
+          "configuration_acknowledged": 14,
+          "pong": 41,
+          "resource_pack_receive": 45
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.4",
+      "protocolVersion": 769,
+      "schemaVersion": "1.21.4",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 44,
+          "keep_alive": 39,
+          "kick_disconnect": 29,
+          "position": 66,
+          "system_chat": 115,
+          "player_chat": 59,
+          "profileless_chat": 30,
+          "update_health": 98,
+          "death_combat_event": 62,
+          "respawn": 76,
+          "start_configuration": 112,
+          "ping": 55,
+          "add_resource_pack": 75,
+          "remove_resource_pack": 74
+        },
+        "playServerbound": {
+          "keep_alive": 26,
+          "teleport_confirm": 0,
+          "settings": 12,
+          "custom_payload": 20,
+          "chat_message": 7,
+          "chat_command": 5,
+          "chat_session_update": 8,
+          "client_command": 10,
+          "position": 28,
+          "position_look": 29,
+          "configuration_acknowledged": 14,
+          "player_loaded": 42,
+          "pong": 43,
+          "resource_pack_receive": 47
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.5",
+      "protocolVersion": 770,
+      "schemaVersion": "1.21.5",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 28,
+          "position": 65,
+          "system_chat": 114,
+          "player_chat": 58,
+          "profileless_chat": 29,
+          "update_health": 97,
+          "death_combat_event": 61,
+          "respawn": 75,
+          "start_configuration": 111,
+          "ping": 54,
+          "add_resource_pack": 74,
+          "remove_resource_pack": 73
+        },
+        "playServerbound": {
+          "keep_alive": 26,
+          "teleport_confirm": 0,
+          "settings": 12,
+          "custom_payload": 20,
+          "chat_message": 7,
+          "chat_command": 5,
+          "chat_session_update": 8,
+          "client_command": 10,
+          "position": 28,
+          "position_look": 29,
+          "configuration_acknowledged": 14,
+          "player_loaded": 42,
+          "pong": 43,
+          "resource_pack_receive": 47
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.6",
+      "protocolVersion": 771,
+      "schemaVersion": "1.21.6",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 28,
+          "position": 65,
+          "system_chat": 114,
+          "player_chat": 58,
+          "profileless_chat": 29,
+          "update_health": 97,
+          "death_combat_event": 61,
+          "respawn": 75,
+          "start_configuration": 111,
+          "ping": 54,
+          "add_resource_pack": 74,
+          "remove_resource_pack": 73
+        },
+        "playServerbound": {
+          "keep_alive": 27,
+          "teleport_confirm": 0,
+          "settings": 13,
+          "custom_payload": 21,
+          "chat_message": 8,
+          "chat_command": 6,
+          "chat_session_update": 9,
+          "client_command": 11,
+          "position": 29,
+          "position_look": 30,
+          "configuration_acknowledged": 15,
+          "player_loaded": 43,
+          "pong": 44,
+          "resource_pack_receive": 48
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.7",
+      "protocolVersion": 772,
+      "schemaVersion": "1.21.7",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 29,
+          "position": 64,
+          "system_chat": 108,
+          "player_chat": 57,
+          "profileless_chat": 30,
+          "update_health": 93,
+          "death_combat_event": 60,
+          "respawn": 71,
+          "start_configuration": 105,
+          "ping": 53,
+          "add_resource_pack": 70,
+          "remove_resource_pack": 69
+        },
+        "playServerbound": {
+          "keep_alive": 24,
+          "teleport_confirm": 0,
+          "settings": 10,
+          "custom_payload": 18,
+          "chat_message": 6,
+          "chat_command": 4,
+          "chat_session_update": 7,
+          "client_command": 9,
+          "position": 26,
+          "position_look": 27,
+          "configuration_acknowledged": 12,
+          "pong": 39,
+          "resource_pack_receive": 43
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.8",
+      "protocolVersion": 772,
+      "schemaVersion": "1.21.8",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6
+        },
+        "playClientbound": {
+          "login": 43,
+          "keep_alive": 38,
+          "kick_disconnect": 28,
+          "position": 65,
+          "system_chat": 114,
+          "player_chat": 58,
+          "profileless_chat": 29,
+          "update_health": 97,
+          "death_combat_event": 61,
+          "respawn": 75,
+          "start_configuration": 111,
+          "ping": 54,
+          "add_resource_pack": 74,
+          "remove_resource_pack": 73
+        },
+        "playServerbound": {
+          "keep_alive": 27,
+          "teleport_confirm": 0,
+          "settings": 13,
+          "custom_payload": 21,
+          "chat_message": 8,
+          "chat_command": 6,
+          "chat_session_update": 9,
+          "client_command": 11,
+          "position": 29,
+          "position_look": 30,
+          "configuration_acknowledged": 15,
+          "player_loaded": 43,
+          "pong": 44,
+          "resource_pack_receive": 48
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.9",
+      "protocolVersion": 773,
+      "schemaVersion": "1.21.9",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 48,
+          "keep_alive": 43,
+          "kick_disconnect": 32,
+          "position": 70,
+          "system_chat": 119,
+          "player_chat": 63,
+          "profileless_chat": 33,
+          "update_health": 102,
+          "death_combat_event": 66,
+          "respawn": 80,
+          "start_configuration": 116,
+          "ping": 59,
+          "add_resource_pack": 79,
+          "remove_resource_pack": 78
+        },
+        "playServerbound": {
+          "keep_alive": 27,
+          "teleport_confirm": 0,
+          "settings": 13,
+          "custom_payload": 21,
+          "chat_message": 8,
+          "chat_command": 6,
+          "chat_session_update": 9,
+          "client_command": 11,
+          "position": 29,
+          "position_look": 30,
+          "configuration_acknowledged": 15,
+          "player_loaded": 43,
+          "pong": 44,
+          "resource_pack_receive": 48
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.10",
+      "protocolVersion": 773,
+      "schemaVersion": "1.21.10",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 48,
+          "keep_alive": 43,
+          "kick_disconnect": 32,
+          "position": 70,
+          "system_chat": 119,
+          "player_chat": 63,
+          "profileless_chat": 33,
+          "update_health": 102,
+          "death_combat_event": 66,
+          "respawn": 80,
+          "start_configuration": 116,
+          "ping": 59,
+          "add_resource_pack": 79,
+          "remove_resource_pack": 78
+        },
+        "playServerbound": {
+          "keep_alive": 27,
+          "teleport_confirm": 0,
+          "settings": 13,
+          "custom_payload": 21,
+          "chat_message": 8,
+          "chat_command": 6,
+          "chat_session_update": 9,
+          "client_command": 11,
+          "position": 29,
+          "position_look": 30,
+          "configuration_acknowledged": 15,
+          "player_loaded": 43,
+          "pong": 44,
+          "resource_pack_receive": 48
+        }
+      }
+    },
+    {
+      "minecraftVersion": "1.21.11",
+      "protocolVersion": 774,
+      "schemaVersion": "1.21.11",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 48,
+          "keep_alive": 43,
+          "kick_disconnect": 32,
+          "position": 70,
+          "system_chat": 119,
+          "player_chat": 63,
+          "profileless_chat": 33,
+          "update_health": 102,
+          "death_combat_event": 66,
+          "respawn": 80,
+          "start_configuration": 116,
+          "ping": 59,
+          "add_resource_pack": 79,
+          "remove_resource_pack": 78
+        },
+        "playServerbound": {
+          "keep_alive": 27,
+          "teleport_confirm": 0,
+          "settings": 13,
+          "custom_payload": 21,
+          "chat_message": 8,
+          "chat_command": 6,
+          "chat_session_update": 9,
+          "client_command": 11,
+          "position": 29,
+          "position_look": 30,
+          "configuration_acknowledged": 15,
+          "player_loaded": 43,
+          "pong": 44,
+          "resource_pack_receive": 48
+        }
+      }
+    },
+    {
+      "minecraftVersion": "26.1",
+      "protocolVersion": 775,
+      "schemaVersion": "26.1",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 49,
+          "keep_alive": 44,
+          "kick_disconnect": 32,
+          "position": 72,
+          "system_chat": 121,
+          "player_chat": 65,
+          "profileless_chat": 33,
+          "update_health": 104,
+          "death_combat_event": 68,
+          "respawn": 82,
+          "start_configuration": 118,
+          "ping": 61,
+          "add_resource_pack": 81,
+          "remove_resource_pack": 80
+        },
+        "playServerbound": {
+          "keep_alive": 28,
+          "teleport_confirm": 0,
+          "settings": 14,
+          "custom_payload": 22,
+          "chat_message": 9,
+          "chat_command": 7,
+          "chat_session_update": 10,
+          "client_command": 12,
+          "position": 30,
+          "position_look": 31,
+          "configuration_acknowledged": 16,
+          "player_loaded": 44,
+          "pong": 45,
+          "resource_pack_receive": 49
+        }
+      }
+    },
+    {
+      "minecraftVersion": "26.1.1",
+      "protocolVersion": 775,
+      "schemaVersion": "26.1.1",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 49,
+          "keep_alive": 44,
+          "kick_disconnect": 32,
+          "position": 72,
+          "system_chat": 121,
+          "player_chat": 65,
+          "profileless_chat": 33,
+          "update_health": 104,
+          "death_combat_event": 68,
+          "respawn": 82,
+          "start_configuration": 118,
+          "ping": 61,
+          "add_resource_pack": 81,
+          "remove_resource_pack": 80
+        },
+        "playServerbound": {
+          "keep_alive": 28,
+          "teleport_confirm": 0,
+          "settings": 14,
+          "custom_payload": 22,
+          "chat_message": 9,
+          "chat_command": 7,
+          "chat_session_update": 10,
+          "client_command": 12,
+          "position": 30,
+          "position_look": 31,
+          "configuration_acknowledged": 16,
+          "player_loaded": 44,
+          "pong": 45,
+          "resource_pack_receive": 49
+        }
+      }
+    },
+    {
+      "minecraftVersion": "26.1.2",
+      "protocolVersion": 775,
+      "schemaVersion": "26.1.2",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 49,
+          "keep_alive": 44,
+          "kick_disconnect": 32,
+          "position": 72,
+          "system_chat": 121,
+          "player_chat": 65,
+          "profileless_chat": 33,
+          "update_health": 104,
+          "death_combat_event": 68,
+          "respawn": 82,
+          "start_configuration": 118,
+          "ping": 61,
+          "add_resource_pack": 81,
+          "remove_resource_pack": 80
+        },
+        "playServerbound": {
+          "keep_alive": 28,
+          "teleport_confirm": 0,
+          "settings": 14,
+          "custom_payload": 22,
+          "chat_message": 9,
+          "chat_command": 7,
+          "chat_session_update": 10,
+          "client_command": 12,
+          "position": 30,
+          "position_look": 31,
+          "configuration_acknowledged": 16,
+          "player_loaded": 44,
+          "pong": 45,
+          "resource_pack_receive": 49
+        }
+      }
+    },
+    {
+      "minecraftVersion": "26.2",
+      "protocolVersion": 776,
+      "schemaVersion": "26.1",
+      "hasConfiguration": true,
+      "packetIds": {
+        "loginClientbound": {
+          "disconnect": 0,
+          "encryption_begin": 1,
+          "success": 2,
+          "compress": 3,
+          "login_plugin_request": 4,
+          "cookie_request": 5
+        },
+        "loginServerbound": {
+          "login_start": 0,
+          "encryption_begin": 1,
+          "login_plugin_response": 2,
+          "login_acknowledged": 3,
+          "cookie_response": 4
+        },
+        "configurationClientbound": {
+          "custom_payload": 1,
+          "disconnect": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "ping": 5,
+          "registry_data": 7,
+          "select_known_packs": 14,
+          "cookie_request": 0,
+          "store_cookie": 10,
+          "transfer": 11,
+          "code_of_conduct": 19,
+          "add_resource_pack": 9,
+          "remove_resource_pack": 8
+        },
+        "configurationServerbound": {
+          "settings": 0,
+          "custom_payload": 2,
+          "finish_configuration": 3,
+          "keep_alive": 4,
+          "pong": 5,
+          "select_known_packs": 7,
+          "cookie_response": 1,
+          "resource_pack_receive": 6,
+          "accept_code_of_conduct": 9
+        },
+        "playClientbound": {
+          "login": 49,
+          "keep_alive": 44,
+          "kick_disconnect": 32,
+          "position": 72,
+          "system_chat": 121,
+          "player_chat": 65,
+          "profileless_chat": 33,
+          "update_health": 104,
+          "death_combat_event": 68,
+          "respawn": 82,
+          "start_configuration": 118,
+          "ping": 61,
+          "add_resource_pack": 81,
+          "remove_resource_pack": 80
+        },
+        "playServerbound": {
+          "keep_alive": 28,
+          "teleport_confirm": 0,
+          "settings": 14,
+          "custom_payload": 22,
+          "chat_message": 9,
+          "chat_command": 7,
+          "chat_session_update": 10,
+          "client_command": 12,
+          "position": 30,
+          "position_look": 31,
+          "configuration_acknowledged": 16,
+          "player_loaded": 44,
+          "pong": 45,
+          "resource_pack_receive": 49
+        }
+      }
+    }
+  ]
+}

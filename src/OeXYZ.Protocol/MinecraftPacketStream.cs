@@ -1,0 +1,162 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
+
+namespace OeXYZ.Protocol;
+
+internal sealed class MinecraftPacketStream : IAsyncDisposable
+{
+    private const int MaximumPacketLength = 2 * 1024 * 1024;
+    private readonly Stream stream;
+    private Stream readStream;
+    private Stream writeStream;
+    private readonly SemaphoreSlim writeLock = new(1, 1);
+    private int compressionThreshold = -1;
+
+    public MinecraftPacketStream(Stream stream)
+    {
+        this.stream = stream;
+        readStream = stream;
+        writeStream = stream;
+    }
+
+    public void EnableCompression(int threshold)
+    {
+        if (threshold < 0) throw new ArgumentOutOfRangeException(nameof(threshold));
+        compressionThreshold = threshold;
+    }
+
+    public void EnableEncryption(byte[] sharedSecret)
+    {
+        ArgumentNullException.ThrowIfNull(sharedSecret);
+        if (sharedSecret.Length != 16) throw new ArgumentException("Minecraft shared secrets are 16 bytes.", nameof(sharedSecret));
+        if (!ReferenceEquals(readStream, stream)) throw new InvalidOperationException("Encryption is already enabled.");
+
+        Aes readAes = CreateCipher(sharedSecret);
+        Aes writeAes = CreateCipher(sharedSecret);
+        readStream = new CryptoStream(stream, readAes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
+        writeStream = new CryptoStream(stream, writeAes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true);
+    }
+
+    public async ValueTask<InboundPacket> ReadAsync(CancellationToken cancellationToken)
+    {
+        int frameLength = await ReadVarIntAsync(cancellationToken).ConfigureAwait(false);
+        if (frameLength <= 0 || frameLength > MaximumPacketLength)
+            throw new InvalidDataException($"Invalid packet frame length: {frameLength}.");
+
+        byte[] frame = new byte[frameLength];
+        await readStream.ReadExactlyAsync(frame, cancellationToken).ConfigureAwait(false);
+        byte[] packetData;
+
+        if (compressionThreshold >= 0)
+        {
+            PacketReader frameReader = new(frame);
+            int uncompressedLength = frameReader.ReadVarInt();
+            ReadOnlySpan<byte> body = frameReader.ReadRemaining();
+            if (uncompressedLength == 0)
+            {
+                packetData = body.ToArray();
+            }
+            else
+            {
+                if (uncompressedLength < compressionThreshold || uncompressedLength > MaximumPacketLength)
+                    throw new InvalidDataException("Compressed packet declared an invalid size.");
+                using MemoryStream input = new(body.ToArray(), writable: false);
+                using ZLibStream inflater = new(input, CompressionMode.Decompress);
+                using MemoryStream output = new(uncompressedLength);
+                await inflater.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+                packetData = output.ToArray();
+                if (packetData.Length != uncompressedLength)
+                    throw new InvalidDataException("Compressed packet size did not match its declaration.");
+            }
+        }
+        else
+        {
+            packetData = frame;
+        }
+
+        PacketReader packetReader = new(packetData);
+        int packetId = packetReader.ReadVarInt();
+        return new InboundPacket(packetId, packetReader.ReadRemaining().ToArray());
+    }
+
+    public async ValueTask WriteAsync(int packetId, Action<PacketWriter>? writePayload, CancellationToken cancellationToken)
+    {
+        PacketWriter packet = new();
+        packet.WriteVarInt(packetId);
+        writePayload?.Invoke(packet);
+        byte[] packetBytes = packet.ToArray();
+
+        PacketWriter framedBody = new();
+        if (compressionThreshold >= 0)
+        {
+            if (packetBytes.Length >= compressionThreshold)
+            {
+                framedBody.WriteVarInt(packetBytes.Length);
+                using MemoryStream compressed = new();
+                await using (ZLibStream deflater = new(compressed, CompressionLevel.Fastest, leaveOpen: true))
+                    await deflater.WriteAsync(packetBytes, cancellationToken).ConfigureAwait(false);
+                framedBody.WriteBytes(compressed.ToArray());
+            }
+            else
+            {
+                framedBody.WriteVarInt(0);
+                framedBody.WriteBytes(packetBytes);
+            }
+        }
+        else
+        {
+            framedBody.WriteBytes(packetBytes);
+        }
+
+        byte[] body = framedBody.ToArray();
+        PacketWriter frame = new();
+        frame.WriteVarInt(body.Length);
+        frame.WriteBytes(body);
+        byte[] output = frame.ToArray();
+
+        await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await writeStream.WriteAsync(output, cancellationToken).ConfigureAwait(false);
+            await writeStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            writeLock.Release();
+        }
+    }
+
+    private async ValueTask<int> ReadVarIntAsync(CancellationToken cancellationToken)
+    {
+        int result = 0;
+        byte[] oneByte = new byte[1];
+        for (int position = 0; position < 35; position += 7)
+        {
+            await readStream.ReadExactlyAsync(oneByte, cancellationToken).ConfigureAwait(false);
+            byte current = oneByte[0];
+            result |= (current & 0x7F) << position;
+            if ((current & 0x80) == 0) return result;
+        }
+
+        throw new InvalidDataException("Frame VarInt is too large.");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        writeLock.Dispose();
+        await stream.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private static Aes CreateCipher(byte[] sharedSecret)
+    {
+        Aes aes = Aes.Create();
+        aes.Mode = CipherMode.CFB;
+        aes.FeedbackSize = 8;
+        aes.Padding = PaddingMode.None;
+        aes.Key = sharedSecret;
+        aes.IV = sharedSecret;
+        return aes;
+    }
+}
+
+internal sealed record InboundPacket(int Id, byte[] Payload);

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>OeXYZ Console Client</AssemblyName>
+    <RootNamespace>OeXYZ.ConsoleClient</RootNamespace>
+    <ApplicationIcon>..\..\assets\oexyz.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <Version>1.0.0</Version>
+    <Authors>OeXYZ contributors</Authors>
+    <Product>OeXYZ Console Client</Product>
+    <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Oexyz/OeXYZ-Console-Client</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/Oexyz/OeXYZ-Console-Client</PackageProjectUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+    <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />
+  </ItemGroup>
+</Project>

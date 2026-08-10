@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible OeXYZ problem without sharing secrets.
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach `accounts.bin`, access tokens, passwords, or unredacted private logs.
+  - type: input
+    id: version
+    attributes:
+      label: OeXYZ version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 25H2 x64
+    validations:
+      required: true
+  - type: input
+    id: minecraft
+    attributes:
+      label: Minecraft server version and protocol
+      placeholder: 26.2 / protocol 776
+  - type: dropdown
+    id: authentication
+    attributes:
+      label: Authentication mode
+      options:
+        - Microsoft account
+        - Offline mode
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include expected and actual behavior. Redact personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant redacted log lines
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed tokens, passwords, email addresses, private IPs, and personal chat.
+          required: true

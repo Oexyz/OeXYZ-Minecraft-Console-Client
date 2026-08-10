@@ -1,0 +1,11 @@
+{
+  "name": "oexyz-console-client-build-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:protocol": "node tools/protocol-catalog/generate.mjs"
+  },
+  "devDependencies": {
+    "minecraft-data": "3.113.0"
+  }
+}

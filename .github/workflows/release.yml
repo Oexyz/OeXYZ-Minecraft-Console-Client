@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Set up Node for catalog verification
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify generated sources and tests
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts
+          npm run generate:protocol
+          git diff --exit-code -- src/OeXYZ.Protocol/Resources/protocol-catalog.json
+          dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
+          dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
+          dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
+
+      - name: Build release archive
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $publish = Join-Path $PWD 'artifacts/publish'
+          $stage = Join-Path $PWD 'artifacts/stage'
+          New-Item -ItemType Directory -Path $publish,$stage -Force | Out-Null
+          dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
+            -c Release -r win-x64 --self-contained true --no-restore `
+            -p:Version=$version `
+            -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" `
+            -o $publish
+          Copy-Item -Path (Join-Path $publish '*') -Destination $stage -Recurse
+          Copy-Item LICENSE,THIRD_PARTY_NOTICES.md,README.md -Destination $stage
+          $archive = Join-Path $PWD 'artifacts/OeXYZ-Console-Client-win-x64.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToUpperInvariant()
+          "$hash  OeXYZ-Console-Client-win-x64.zip" | Set-Content `
+            -LiteralPath (Join-Path $PWD 'artifacts/SHA256SUMS') -Encoding ascii
+
+      - name: Attest release archive
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/OeXYZ-Console-Client-win-x64.zip
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' `
+            artifacts/OeXYZ-Console-Client-win-x64.zip `
+            artifacts/SHA256SUMS `
+            --verify-tag `
+            --generate-notes `
+            --title "OeXYZ ${{ github.ref_name }}"
