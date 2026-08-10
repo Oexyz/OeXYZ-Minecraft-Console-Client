@@ -1,6 +1,8 @@
 <Solution>
   <Project Path="src/OeXYZ.Protocol/OeXYZ.Protocol.csproj" />
+  <Project Path="src/OeXYZ.Updater/OeXYZ.Updater.csproj" />
   <Project Path="src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj" />
   <Project Path="src/OeXYZ.IntegrationClient/OeXYZ.IntegrationClient.csproj" />
+  <Project Path="tests/OeXYZ.ConsoleClient.Tests/OeXYZ.ConsoleClient.Tests.csproj" />
   <Project Path="tests/OeXYZ.Protocol.Tests/OeXYZ.Protocol.Tests.csproj" />
 </Solution>

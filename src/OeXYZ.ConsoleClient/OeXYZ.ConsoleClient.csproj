@@ -23,6 +23,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+    <ProjectReference Include="..\OeXYZ.Updater\OeXYZ.Updater.csproj" />
     <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />
   </ItemGroup>
 </Project>

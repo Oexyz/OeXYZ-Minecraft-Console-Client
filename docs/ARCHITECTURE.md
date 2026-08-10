@@ -8,6 +8,8 @@ OeXYZ.ConsoleClient (WinForms UI)
 ├── profiles and encrypted account-session storage
 ├── session lifecycle, reconnect, anti-AFK and local logs
 ├── Microsoft browser-authentication adapter
+├── OeXYZ.Updater
+│   └── GitHub release lookup, bounded download and SHA-256 verification
 └── OeXYZ.Protocol
     ├── address parsing, DNS SRV and status discovery
     ├── packet framing, compression and AES/CFB8 encryption
@@ -54,5 +56,8 @@ tokens.
 The release workflow injects its own GitHub repository URL as assembly
 metadata. The app queries only GitHub's HTTPS latest-release API. It looks for
 the exact Windows archive name and `SHA256SUMS`, downloads to a temporary file,
-compares hashes using a fixed-time comparison, and only then moves the archive
-to the user-selected path. It never launches the downloaded program.
+compares hashes using a fixed-time comparison, closes the temporary archive,
+and only then moves it to the user-selected path. It never launches the
+downloaded program. The updater is a separate library with deterministic tests
+for version comparison, successful verification, Windows file lifetime, and
+checksum rejection.

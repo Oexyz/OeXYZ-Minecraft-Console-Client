@@ -12,6 +12,7 @@ to run a release.
 dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
 dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
+dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
 ```
 
 When updating the pinned `minecraft-data` package:

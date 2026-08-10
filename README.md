@@ -104,7 +104,8 @@ The runtime is intentionally small and transparent:
 
 OeXYZ contains no Minecraft game executable, game assets, server JAR, hidden
 launcher, advertising SDK, telemetry SDK, or remotely loaded plugin system.
-The protocol code is in [`src/OeXYZ.Protocol`](src/OeXYZ.Protocol), the desktop
+The protocol code is in [`src/OeXYZ.Protocol`](src/OeXYZ.Protocol), the verified
+download code is in [`src/OeXYZ.Updater`](src/OeXYZ.Updater), the desktop
 application is in [`src/OeXYZ.ConsoleClient`](src/OeXYZ.ConsoleClient), and the
 generator is in [`tools/protocol-catalog`](tools/protocol-catalog).
 
@@ -138,6 +139,7 @@ pinned `minecraft-data` version.
 dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
 dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
+dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
 dotnet publish src/OeXYZ.ConsoleClient -c Release -r win-x64 --self-contained true
 ```
 

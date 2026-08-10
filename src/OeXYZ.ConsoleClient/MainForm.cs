@@ -156,7 +156,7 @@ internal sealed class MainForm : Form
         };
         Button updates = Theme.Button("Check for updates", 150);
         Button about = Theme.Button("About & safety", 130);
-        updates.Click += async (_, _) => await UpdateDialog.ShowForAsync(this);
+        updates.Click += (_, _) => UpdateDialog.ShowFor(this);
         about.Click += (_, _) => ShowAbout();
         auxiliary.Controls.Add(updates);
         auxiliary.Controls.Add(about);

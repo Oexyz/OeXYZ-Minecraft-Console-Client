@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>OeXYZ.Updater</AssemblyName>
+    <RootNamespace>OeXYZ.Updater</RootNamespace>
+  </PropertyGroup>
+</Project>

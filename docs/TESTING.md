@@ -4,15 +4,19 @@ Last verified: **2026-08-11** on Windows 11 x64 with .NET SDK 10.0.302.
 
 ## Deterministic tests
 
-The dependency-free test executable validates catalog endpoints, required
-packet mappings, server-address parsing, offline UUID generation, and packet
-primitive round trips:
+The dependency-free protocol test executable validates catalog endpoints,
+required packet mappings, server-address parsing, offline UUID generation, and
+packet primitive round trips. A separate updater suite uses a loopback-only HTTP
+server to verify semantic-version normalization, successful SHA-256 validation,
+temporary-file closure on Windows, and rejection plus cleanup of a mismatched
+checksum:
 
 ```powershell
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release
+dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release
 ```
 
-Expected result: `PASS: 5 protocol tests`.
+Expected results: `PASS: 5 protocol tests` and `PASS: 3 updater tests`.
 
 ## Local end-to-end servers
 
@@ -72,6 +76,9 @@ Before publishing a tag:
 4. Add, edit, and remove profiles through the UI.
 5. Verify automatic and custom-port connections.
 6. Verify chat, `/respawn`, disconnect, log opening, and stable scroll behavior.
-7. Confirm a local developer build explains that its update source is unset.
-8. Confirm a release build reads its GitHub repository metadata and rejects a
-   missing or incorrect checksum.
+7. Confirm the branded update window appears immediately and shows installed
+   and latest versions.
+8. Confirm a release build reads its GitHub repository metadata, downloads to a
+   temporary file, and rejects a missing or incorrect checksum.
+9. Download the published release back from GitHub, verify `SHA256SUMS`, launch
+   that exact EXE, connect it to the newest local server, and recheck updates.

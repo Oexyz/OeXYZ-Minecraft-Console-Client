@@ -1,239 +1,194 @@
 using System.Diagnostics;
-using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using OeXYZ.Updater;
 
 namespace OeXYZ.ConsoleClient;
 
-internal static class UpdateDialog
+internal sealed class UpdateDialog : Form
 {
-    public static async Task ShowForAsync(IWin32Window owner)
+    private readonly Label heading = Theme.Heading("Checking for updates", 16F);
+    private readonly Label message = new();
+    private readonly Label versions = new();
+    private readonly ProgressBar progress = new();
+    private readonly Button download = Theme.Button("Download verified update", 190);
+    private readonly Button releasePage = Theme.Button("Open release page", 150);
+    private readonly Button close = Theme.Button("Close", 90);
+    private readonly CancellationTokenSource lifetime = new();
+    private UpdateCheckResult? result;
+
+    private UpdateDialog()
     {
-        Control? control = owner as Control;
-        Cursor? previousCursor = control?.Cursor;
-        if (control is not null) control.Cursor = Cursors.WaitCursor;
+        Text = "OeXYZ Updates";
+        ClientSize = new Size(560, 310);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        StartPosition = FormStartPosition.CenterParent;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        BackColor = Theme.Background;
+        ForeColor = Theme.Ink;
+        Font = Theme.Body;
+
+        heading.Location = new Point(24, 22);
+        heading.Size = new Size(510, 34);
+        message.Location = new Point(24, 70);
+        message.Size = new Size(510, 68);
+        message.ForeColor = Color.FromArgb(198, 210, 225);
+        message.Font = new Font("Segoe UI", 10F);
+        versions.Location = new Point(24, 142);
+        versions.Size = new Size(510, 48);
+        versions.ForeColor = Theme.Muted;
+        versions.Font = new Font("Consolas", 9F);
+        progress.Location = new Point(24, 204);
+        progress.Size = new Size(512, 8);
+        progress.Style = ProgressBarStyle.Marquee;
+        progress.MarqueeAnimationSpeed = 24;
+
+        download.Location = new Point(24, 244);
+        download.Visible = false;
+        Theme.Primary(download);
+        releasePage.Location = new Point(222, 244);
+        releasePage.Visible = false;
+        close.Location = new Point(446, 244);
+        close.DialogResult = DialogResult.Cancel;
+        close.Enabled = true;
+        download.Click += async (_, _) => await DownloadAsync();
+        releasePage.Click += (_, _) => OpenReleasePage();
+
+        Controls.Add(heading);
+        Controls.Add(message);
+        Controls.Add(versions);
+        Controls.Add(progress);
+        Controls.Add(download);
+        Controls.Add(releasePage);
+        Controls.Add(close);
+        CancelButton = close;
+        Shown += async (_, _) =>
+        {
+            Theme.ApplyDarkTitleBar(this);
+            await CheckAsync();
+        };
+        FormClosed += (_, _) => lifetime.Cancel();
+    }
+
+    public static void ShowFor(IWin32Window owner)
+    {
+        using UpdateDialog dialog = new();
+        dialog.ShowDialog(owner);
+    }
+
+    private async Task CheckAsync()
+    {
+        CancellationToken cancellationToken = lifetime.Token;
+        message.Text = "Contacting the configured GitHub repository over HTTPS...";
         try
         {
-            UpdateCheckResult result = await GitHubUpdateService.CheckAsync().ConfigureAwait(true);
+            result = await GitHubUpdateService.CheckAsync(cancellationToken);
+            if (IsDisposed) return;
+            progress.Visible = false;
+            versions.Text = $"INSTALLED  {Display(result.CurrentVersion)}\nLATEST     {Display(result.LatestVersion)}";
             if (!result.IsUpdateAvailable)
             {
-                MessageBox.Show(owner,
-                    $"You are up to date.\n\nInstalled: {result.CurrentVersion}\nLatest: {result.LatestVersion}",
-                    "OeXYZ Updates", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                bool newerThanPublished = result.IsCurrentNewer;
+                heading.Text = newerThanPublished ? "This build is newer" : "You are up to date";
+                heading.ForeColor = Theme.Green;
+                message.Text = newerThanPublished
+                    ? "This installation is newer than the latest public OeXYZ release."
+                    : "This installation matches the newest published OeXYZ release.";
+                releasePage.Visible = true;
                 return;
             }
-
-            DialogResult choice = MessageBox.Show(owner,
-                $"OeXYZ {result.LatestVersion} is available.\n\n" +
-                $"Installed: {result.CurrentVersion}\n\n" +
-                "Download the Windows release now? The ZIP is accepted only when its SHA-256 hash matches the release checksum.",
-                "OeXYZ Update Available", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-            if (choice != DialogResult.Yes) return;
-
-            using SaveFileDialog save = new()
-            {
-                Title = "Save verified OeXYZ update",
-                FileName = result.AssetName,
-                Filter = "ZIP archive (*.zip)|*.zip",
-                AddExtension = true,
-                DefaultExt = "zip",
-                OverwritePrompt = true
-            };
-            if (save.ShowDialog(owner) != DialogResult.OK) return;
-
-            if (control is not null) control.Cursor = Cursors.WaitCursor;
-            await GitHubUpdateService.DownloadVerifiedAsync(result, save.FileName).ConfigureAwait(true);
-            MessageBox.Show(owner,
-                "The update was downloaded and its SHA-256 checksum was verified.\n\n" +
-                "Close OeXYZ, extract the ZIP and replace the previous application file.",
-                "Verified Update Downloaded", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            Process.Start(new ProcessStartInfo(Path.GetDirectoryName(save.FileName)!) { UseShellExecute = true });
+            heading.Text = $"OeXYZ {Display(result.LatestVersion)} is available";
+            heading.ForeColor = Theme.BlueBright;
+            message.Text = "Download the Windows ZIP. OeXYZ will accept it only when its SHA-256 hash matches the release manifest.";
+            download.Visible = true;
+            releasePage.Visible = true;
         }
         catch (UpdateSourceNotConfiguredException)
         {
-            MessageBox.Show(owner,
-                "This local developer build has no update source. GitHub release builds receive the repository URL automatically during publishing.",
-                "OeXYZ Updates", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!IsDisposed)
+                ShowError("No update source configured",
+                    "This developer build has no repository metadata. Official release builds configure it automatically.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
-            MessageBox.Show(owner,
-                "The update could not be checked or verified. Nothing was installed.\n\n" + exception.Message,
-                "OeXYZ Updates", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!IsDisposed)
+                ShowError("Update check failed", exception.Message + " Nothing was downloaded or installed.");
         }
-        finally
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (result is null) return;
+        using SaveFileDialog save = new()
         {
-            if (control is not null) control.Cursor = previousCursor;
-        }
-    }
-}
-
-internal sealed record UpdateCheckResult(
-    Version CurrentVersion,
-    Version LatestVersion,
-    string ReleasePage,
-    string AssetName,
-    string AssetUrl,
-    string ChecksumsUrl)
-{
-    public bool IsUpdateAvailable => LatestVersion > CurrentVersion;
-}
-
-internal static class GitHubUpdateService
-{
-    private const string ReleaseAssetName = "OeXYZ-Console-Client-win-x64.zip";
-    private const string ChecksumsAssetName = "SHA256SUMS";
-    private const long MaximumReleaseBytes = 500L * 1024 * 1024;
-    private static readonly HttpClient Http = CreateClient();
-
-    public static async Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default)
-    {
-        (string owner, string repository) = ResolveRepository();
-        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        string apiUrl = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repository)}/releases/latest";
-        using HttpResponseMessage response = await Http.GetAsync(apiUrl, timeout.Token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using Stream body = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-        GitHubRelease release = await JsonSerializer.DeserializeAsync<GitHubRelease>(body, cancellationToken: timeout.Token)
-                                .ConfigureAwait(false)
-                            ?? throw new InvalidDataException("GitHub returned an empty release response.");
-        Version latest = ParseVersion(release.TagName);
-        Version current = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
-        GitHubAsset archive = release.Assets.FirstOrDefault(asset =>
-                                  string.Equals(asset.Name, ReleaseAssetName, StringComparison.OrdinalIgnoreCase))
-                              ?? throw new InvalidDataException($"The release does not contain {ReleaseAssetName}.");
-        GitHubAsset checksums = release.Assets.FirstOrDefault(asset =>
-                                    string.Equals(asset.Name, ChecksumsAssetName, StringComparison.OrdinalIgnoreCase))
-                                ?? throw new InvalidDataException($"The release does not contain {ChecksumsAssetName}.");
-        return new UpdateCheckResult(current, latest, release.HtmlUrl, archive.Name,
-            archive.BrowserDownloadUrl, checksums.BrowserDownloadUrl);
-    }
-
-    public static async Task DownloadVerifiedAsync(
-        UpdateCheckResult release,
-        string destinationPath,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
-        byte[] checksumDocument = await DownloadBytesAsync(release.ChecksumsUrl, 1024 * 1024, cancellationToken)
-            .ConfigureAwait(false);
-        string expectedHash = FindExpectedHash(Encoding.UTF8.GetString(checksumDocument), release.AssetName);
-        string temporaryPath = destinationPath + ".download";
+            Title = "Save verified OeXYZ update",
+            FileName = result.AssetName,
+            Filter = "ZIP archive (*.zip)|*.zip",
+            AddExtension = true,
+            DefaultExt = "zip",
+            OverwritePrompt = true
+        };
+        if (save.ShowDialog(this) != DialogResult.OK) return;
+        CancellationToken cancellationToken = lifetime.Token;
         try
         {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-            using HttpResponseMessage response = await Http.GetAsync(release.AssetUrl,
-                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            if (response.Content.Headers.ContentLength is long length && length > MaximumReleaseBytes)
-                throw new InvalidDataException("The release archive is larger than the safety limit.");
-            await using (Stream source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (FileStream destination = new(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                             1024 * 128, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
-                if (destination.Length > MaximumReleaseBytes)
-                    throw new InvalidDataException("The release archive is larger than the safety limit.");
-            }
-
-            await using FileStream downloaded = new(temporaryPath, FileMode.Open, FileAccess.Read, FileShare.Read,
-                1024 * 128, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            string actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloaded, cancellationToken)
-                .ConfigureAwait(false));
-            if (!CryptographicOperations.FixedTimeEquals(
-                    Convert.FromHexString(expectedHash), Convert.FromHexString(actualHash)))
-                throw new CryptographicException("The downloaded archive does not match the published SHA-256 checksum.");
-            File.Move(temporaryPath, destinationPath, overwrite: true);
+            UseWaitCursor = true;
+            download.Enabled = false;
+            close.Text = "Cancel";
+            progress.Visible = true;
+            heading.Text = "Downloading and verifying";
+            message.Text = "The archive is written to a temporary file until its SHA-256 checksum has been verified.";
+            await GitHubUpdateService.DownloadVerifiedAsync(result, save.FileName, cancellationToken);
+            if (IsDisposed) return;
+            heading.Text = "Verified update downloaded";
+            heading.ForeColor = Theme.Green;
+            message.Text = "Close OeXYZ, extract the ZIP and replace the previous application file.";
+            Process.Start(new ProcessStartInfo(Path.GetDirectoryName(save.FileName)!) { UseShellExecute = true });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (!IsDisposed) ShowError("Download rejected", exception.Message + " Nothing was installed.");
         }
         finally
         {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            if (!IsDisposed)
+            {
+                progress.Visible = false;
+                UseWaitCursor = false;
+                download.Enabled = true;
+                close.Text = "Close";
+            }
         }
     }
 
-    private static async Task<byte[]> DownloadBytesAsync(
-        string url,
-        int maximumBytes,
-        CancellationToken cancellationToken)
+    private void OpenReleasePage()
     {
-        using HttpResponseMessage response = await Http.GetAsync(url, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength is long length && length > maximumBytes)
-            throw new InvalidDataException("The checksum document is larger than the safety limit.");
-        byte[] value = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-        if (value.Length > maximumBytes) throw new InvalidDataException("The checksum document is larger than the safety limit.");
-        return value;
+        if (result is null) return;
+        Process.Start(new ProcessStartInfo(result.ReleasePage) { UseShellExecute = true });
     }
 
-    private static string FindExpectedHash(string document, string assetName)
+    private void ShowError(string title, string detail)
     {
-        foreach (string rawLine in document.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            string line = rawLine.Trim();
-            int separator = line.IndexOfAny([' ', '\t']);
-            if (separator <= 0) continue;
-            string hash = line[..separator];
-            string name = line[separator..].Trim().TrimStart('*');
-            if (string.Equals(name, assetName, StringComparison.OrdinalIgnoreCase) &&
-                hash.Length == 64 && hash.All(Uri.IsHexDigit))
-                return hash.ToUpperInvariant();
-        }
-        throw new InvalidDataException($"No valid SHA-256 entry for {assetName} was found.");
+        progress.Visible = false;
+        heading.Text = title;
+        heading.ForeColor = Theme.Danger;
+        message.Text = detail;
+        versions.Text = string.Empty;
+        download.Visible = false;
     }
 
-    private static (string Owner, string Repository) ResolveRepository()
+    private static string Display(Version value) =>
+        value.Build >= 0 ? $"{value.Major}.{value.Minor}.{value.Build}" : $"{value.Major}.{value.Minor}";
+
+    protected override void Dispose(bool disposing)
     {
-        string? configured = Environment.GetEnvironmentVariable("OEXYZ_UPDATE_REPOSITORY");
-        configured ??= Assembly.GetEntryAssembly()?
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(attribute => string.Equals(attribute.Key, "RepositoryUrl", StringComparison.Ordinal))?
-            .Value;
-        if (string.IsNullOrWhiteSpace(configured)) throw new UpdateSourceNotConfiguredException();
-        configured = configured.Trim().TrimEnd('/');
-        if (Uri.TryCreate(configured, UriKind.Absolute, out Uri? repositoryUri))
-        {
-            if (!string.Equals(repositoryUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(repositoryUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("The update repository must be an HTTPS github.com URL.");
-            configured = repositoryUri.AbsolutePath.Trim('/');
-        }
-        string[] parts = configured.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 2 || parts.Any(part => part.Any(character =>
-                !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.'))))
-            throw new InvalidDataException("The update repository must have the form owner/repository.");
-        return (parts[0], parts[1]);
+        if (disposing) lifetime.Dispose();
+        base.Dispose(disposing);
     }
-
-    private static Version ParseVersion(string tag)
-    {
-        string value = tag.Trim().TrimStart('v', 'V');
-        int suffix = value.IndexOfAny(['-', '+']);
-        if (suffix >= 0) value = value[..suffix];
-        return Version.TryParse(value, out Version? parsed)
-            ? parsed
-            : throw new InvalidDataException($"The release tag '{tag}' is not a supported version number.");
-    }
-
-    private static HttpClient CreateClient()
-    {
-        HttpClient client = new() { Timeout = TimeSpan.FromMinutes(5) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("OeXYZ-Console-Client/1.0");
-        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-        return client;
-    }
-
-    private sealed record GitHubRelease(
-        [property: JsonPropertyName("tag_name")] string TagName,
-        [property: JsonPropertyName("html_url")] string HtmlUrl,
-        [property: JsonPropertyName("assets")] List<GitHubAsset> Assets);
-
-    private sealed record GitHubAsset(
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("browser_download_url")] string BrowserDownloadUrl);
 }
-
-internal sealed class UpdateSourceNotConfiguredException : InvalidOperationException;

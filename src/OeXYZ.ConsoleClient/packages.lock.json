@@ -60,6 +60,9 @@
       },
       "oexyz.protocol": {
         "type": "Project"
+      },
+      "oexyz.updater": {
+        "type": "Project"
       }
     },
     "net10.0-windows7.0/win-x64": {

@@ -45,6 +45,9 @@ jobs:
       - name: Run deterministic protocol tests
         run: dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
 
+      - name: Run deterministic updater tests
+        run: dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
+
       - name: Verify self-contained publish
         shell: pwsh
         run: |

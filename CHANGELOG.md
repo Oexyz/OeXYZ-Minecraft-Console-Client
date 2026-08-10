@@ -5,8 +5,18 @@ use semantic versioning.
 
 ## [Unreleased]
 
-- GitHub release workflow and verified in-app update downloads.
-- Public compatibility documentation and screenshots.
+## [1.0.1] - 2026-08-11
+
+### Fixed
+
+- Replaced the update message box with an immediately visible branded window.
+- Closed the verified temporary archive before its final move on Windows.
+- Normalized release and assembly versions so `1.0.0` equals `1.0.0.0`.
+
+### Added
+
+- Deterministic updater tests for successful downloads, Windows file lifetime,
+  version comparison, checksum rejection, and temporary-file cleanup.
 
 ## [1.0.0] - 2026-08-11
 
