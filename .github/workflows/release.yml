@@ -62,7 +62,7 @@ jobs:
             -LiteralPath (Join-Path $PWD 'artifacts/SHA256SUMS') -Encoding ascii
 
       - name: Attest release archive
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: artifacts/OeXYZ-Console-Client-win-x64.zip
 
