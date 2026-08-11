@@ -7,6 +7,7 @@ use semantic versioning.
 
 ### Added
 
+- A reproducible 4K social-preview master and a GitHub-ready 1280x640 export.
 - Search-oriented README introduction, CI/release/protocol badges, and a
   reproducible GitHub artifact-attestation verification guide.
 - Objective scope comparison with Mineflayer and HeadlessMc based on their
@@ -15,6 +16,8 @@ use semantic versioning.
 
 ### Changed
 
+- Renamed the GitHub repository to `OeXYZ-Minecraft-Console-Client` and
+  migrated badges, release links, updater metadata, and project URLs.
 - Architecture documentation now states prominently that OeXYZ implements the
   protocol directly and never launches Minecraft.
 

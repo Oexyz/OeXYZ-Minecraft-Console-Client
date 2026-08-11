@@ -16,8 +16,8 @@ It implements the Minecraft protocol directly, uses **no renderer**, supports
 **1.8 through 26.2** without launching the Minecraft game.
 
 <p align="center">
-  <a href="https://github.com/Oexyz/OeXYZ-Console-Client/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Oexyz/OeXYZ-Console-Client/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/Oexyz/OeXYZ-Console-Client/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Oexyz/OeXYZ-Console-Client?display_name=tag&sort=semver"></a>
+  <a href="https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Oexyz/OeXYZ-Minecraft-Console-Client?display_name=tag&sort=semver"></a>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-1389FD?logo=windows">
   <img alt="Minecraft Java 1.8 through 26.2" src="https://img.shields.io/badge/Minecraft%20Java-1.8%E2%80%9326.2-35c46a">
   <img alt="Protocols 47 through 776" src="https://img.shields.io/badge/protocols-47%E2%80%93776-8b5cf6">
@@ -35,7 +35,7 @@ separate .NET installation.
 ## Download
 
 Download `OeXYZ-Console-Client-win-x64.zip` from the
-[latest GitHub release](https://github.com/Oexyz/OeXYZ-Console-Client/releases/latest), extract it, and open
+[latest GitHub release](https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client/releases/latest), extract it, and open
 `OeXYZ Console Client.exe`.
 
 The release also contains `SHA256SUMS`. The in-app updater checks the same
@@ -51,7 +51,7 @@ Every release archive receives a GitHub artifact attestation in the pinned
 archive without trusting a copied checksum:
 
 ```powershell
-gh release download --repo Oexyz/OeXYZ-Console-Client `
+gh release download --repo Oexyz/OeXYZ-Minecraft-Console-Client `
   --pattern 'OeXYZ-Console-Client-win-x64.zip' `
   --pattern 'SHA256SUMS'
 
@@ -60,7 +60,7 @@ $actual = (Get-FileHash 'OeXYZ-Console-Client-win-x64.zip' -Algorithm SHA256).Ha
 if ($actual -ne $expected) { throw 'Release checksum mismatch.' }
 
 gh attestation verify 'OeXYZ-Console-Client-win-x64.zip' `
-  --repo Oexyz/OeXYZ-Console-Client
+  --repo Oexyz/OeXYZ-Minecraft-Console-Client
 ```
 
 The attestation proves which GitHub repository and workflow produced the ZIP.

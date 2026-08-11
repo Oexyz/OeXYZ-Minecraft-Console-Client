@@ -17,9 +17,9 @@
     <Product>OeXYZ Console Client</Product>
     <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/Oexyz/OeXYZ-Console-Client</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://github.com/Oexyz/OeXYZ-Console-Client</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client</PackageProjectUrl>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
