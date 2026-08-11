@@ -27,6 +27,7 @@ internal sealed class ConsoleSession : IAsyncDisposable
     private MinecraftIdentity? identity;
     private Task? runTask;
     private int respawnPending;
+    private int stopping;
 
     public ConsoleSession(
         AccountProfile account,
@@ -71,7 +72,14 @@ internal sealed class ConsoleSession : IAsyncDisposable
         await active.RespawnAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public void Stop() => lifetime.Cancel();
+    public void Stop()
+    {
+        if (Interlocked.Exchange(ref stopping, 1) != 0)
+            return;
+
+        lifetime.Cancel();
+        connection?.Disconnect();
+    }
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -259,7 +267,7 @@ internal sealed class ConsoleSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        lifetime.Cancel();
+        Stop();
         if (runTask is not null)
         {
             try { await runTask.ConfigureAwait(false); } catch (OperationCanceledException) { }

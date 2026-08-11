@@ -1,4 +1,6 @@
 using OeXYZ.Protocol;
+using System.Net;
+using System.Net.Sockets;
 
 List<string> passed = [];
 
@@ -63,6 +65,11 @@ Run("packet primitive round trip", () =>
     Equal(0, reader.Remaining);
 });
 
+Run("connected socket disconnect completes", () =>
+{
+    VerifyConnectedDisconnectAsync().GetAwaiter().GetResult();
+});
+
 Console.WriteLine($"PASS: {passed.Count} protocol tests");
 foreach (string name in passed) Console.WriteLine($"  - {name}");
 return;
@@ -95,4 +102,45 @@ static void Throws<TException>(Action action) where TException : Exception
         return;
     }
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static async Task VerifyConnectedDisconnectAsync()
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+    TaskCompletionSource releaseServer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    Task server = Task.Run(async () =>
+    {
+        using TcpClient peer = await listener.AcceptTcpClientAsync(timeout.Token);
+        NetworkStream stream = peer.GetStream();
+
+        // Minimal 1.8 login-success and play-login frames. Their payload is not
+        // needed by the client, which lets this test keep the socket open and
+        // prove that Disconnect(), rather than a server close, ends the session.
+        await stream.WriteAsync(new byte[] { 1, 2, 1, 1 }, timeout.Token);
+        await stream.FlushAsync(timeout.Token);
+        await releaseServer.Task.WaitAsync(timeout.Token);
+    }, timeout.Token);
+
+    try
+    {
+        ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8");
+        await using MinecraftConnection connection = new("127.0.0.1", (ushort)port, "DisconnectTest", protocol);
+        await connection.ConnectAsync(timeout.Token);
+        Equal(ConnectionState.Play, connection.State);
+
+        connection.Disconnect();
+        connection.Disconnect();
+        await connection.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        Equal(ConnectionState.Disconnected, connection.State);
+    }
+    finally
+    {
+        releaseServer.TrySetResult();
+        await server.WaitAsync(TimeSpan.FromSeconds(2));
+        listener.Stop();
+    }
 }

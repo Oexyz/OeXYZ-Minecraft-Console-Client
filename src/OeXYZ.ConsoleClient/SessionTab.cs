@@ -14,9 +14,9 @@ internal sealed class SessionTab : TabPage
     private readonly TextBox input = new();
     private readonly Button send = Theme.Button("Send", 82);
     private readonly Button respawn = Theme.Button("Respawn", 80);
-    private readonly Button disconnect = Theme.Button("Disconnect", 90);
+    private readonly Button disconnect = Theme.Button("Disconnect", 104);
     private readonly Button openLog = Theme.Button("Log", 68);
-    private readonly Button close = Theme.Button("Close", 70);
+    private readonly Button close = Theme.Button("Close", 76);
     private readonly Label status = new();
     private readonly System.Windows.Forms.Timer drainTimer = new() { Interval = 100 };
     private readonly SynchronizationContext uiContext = SynchronizationContext.Current
@@ -32,7 +32,18 @@ internal sealed class SessionTab : TabPage
         BackColor = Theme.Background;
         Padding = Padding.Empty;
 
-        Panel toolbar = new() { Dock = DockStyle.Top, Height = 48, BackColor = Theme.Surface };
+        TableLayoutPanel toolbar = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = Theme.Surface
+        };
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         status.Text = "STARTING";
         status.Font = new Font("Consolas", 9F, FontStyle.Bold);
         status.ForeColor = Theme.Blue;
@@ -40,18 +51,25 @@ internal sealed class SessionTab : TabPage
         status.Padding = new Padding(12, 16, 0, 0);
         FlowLayoutPanel actions = new()
         {
-            Dock = DockStyle.Right,
-            Width = 340,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(0, 7, 6, 0),
+            Margin = Padding.Empty,
             WrapContents = false,
             BackColor = Theme.Surface
         };
+
+        foreach (Button action in new[] { respawn, disconnect, openLog, close })
+            action.Margin = new Padding(3, 0, 3, 0);
+
         actions.Controls.Add(respawn);
         actions.Controls.Add(disconnect);
         actions.Controls.Add(openLog);
         actions.Controls.Add(close);
-        toolbar.Controls.Add(status);
-        toolbar.Controls.Add(actions);
+        toolbar.Controls.Add(status, 0, 0);
+        toolbar.Controls.Add(actions, 1, 0);
 
         Panel inputPanel = new()
         {

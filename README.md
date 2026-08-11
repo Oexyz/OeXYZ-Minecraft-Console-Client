@@ -39,9 +39,11 @@ Download `OeXYZ-Console-Client-win-x64.zip` from the
 `OeXYZ Console Client.exe`.
 
 The release also contains `SHA256SUMS`. The in-app updater checks the same
-manifest before accepting a downloaded archive. Windows may show a SmartScreen
-prompt for a new unsigned open-source publisher; verify the release source and
-checksum before choosing to run it.
+manifest before accepting a downloaded archive. Current GitHub releases are
+unsigned while trusted code signing is being arranged. SmartScreen may warn,
+and Windows 11 with Smart App Control enabled can block an unsigned build
+entirely. The checksum and GitHub attestation verify integrity and build origin,
+but they do not replace a Windows Authenticode signature.
 
 ### Verify a release
 

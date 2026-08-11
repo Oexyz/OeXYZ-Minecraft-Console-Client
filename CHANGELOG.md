@@ -5,8 +5,12 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-11
+
 ### Added
 
+- A deterministic loopback regression test proving that an established
+  Minecraft connection can be disconnected promptly and repeatedly.
 - A reproducible 4K social-preview master and a GitHub-ready 1280x640 export.
 - Search-oriented README introduction, CI/release/protocol badges, and a
   reproducible GitHub artifact-attestation verification guide.
@@ -20,6 +24,16 @@ use semantic versioning.
   migrated badges, release links, updater metadata, and project URLs.
 - Architecture documentation now states prominently that OeXYZ implements the
   protocol directly and never launches Minecraft.
+
+### Fixed
+
+- Disconnect now terminates the active Minecraft socket instead of only
+  cancelling the outer session, so connected sessions shut down immediately.
+- Close no longer waits indefinitely for a connected receive loop.
+- Session action buttons now use a DPI-aware, auto-sized toolbar so Disconnect
+  and Close remain fully visible and clickable.
+- Repeated or concurrent disconnect and disposal requests are handled safely
+  without reporting an intentional socket shutdown as a connection failure.
 
 ## [1.0.1] - 2026-08-11
 

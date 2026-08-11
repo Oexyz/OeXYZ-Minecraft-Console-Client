@@ -19,6 +19,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private TcpClient? tcpClient;
     private MinecraftPacketStream? packets;
     private Task? receiveTask;
+    private int stopping;
     private ConnectionState state;
     private PlayerPosition position = new(0, 0, 0, 0, 0);
     private bool playerLoadedSent;
@@ -87,15 +88,39 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public int ProtocolVersion => protocol.ProtocolVersion;
     public Task Completion => receiveTask ?? Task.CompletedTask;
 
+    public void Disconnect()
+    {
+        if (Interlocked.Exchange(ref stopping, 1) == 0)
+            lifetime.Cancel();
+
+        TcpClient? activeClient = Interlocked.Exchange(ref tcpClient, null);
+        if (activeClient is null)
+            return;
+
+        try
+        {
+            activeClient.Client.Shutdown(SocketShutdown.Both);
+        }
+        catch (SocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        activeClient.Dispose();
+    }
+
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (state != ConnectionState.Disconnected) throw new InvalidOperationException("This connection has already been started.");
         SetState(ConnectionState.Connecting);
-        tcpClient = new TcpClient { NoDelay = true };
+        TcpClient client = new() { NoDelay = true };
+        tcpClient = client;
 
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
-        await tcpClient.ConnectAsync(host, port, linked.Token).ConfigureAwait(false);
-        packets = new MinecraftPacketStream(tcpClient.GetStream());
+        await client.ConnectAsync(host, port, linked.Token).ConfigureAwait(false);
+        packets = new MinecraftPacketStream(client.GetStream());
         Log?.Invoke($"TCP connection established to {host}:{port}.");
 
         await packets.WriteAsync(0, writer =>
@@ -234,6 +259,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // A socket shutdown may surface as IOException/ObjectDisposedException
+            // instead of OperationCanceledException. It is still a clean user disconnect.
         }
         catch (Exception exception)
         {
@@ -778,12 +808,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        lifetime.Cancel();
-        if (tcpClient is not null)
-        {
-            try { tcpClient.Client.Shutdown(SocketShutdown.Both); } catch (SocketException) { }
-            tcpClient.Dispose();
-        }
+        Disconnect();
         if (receiveTask is not null)
         {
             try { await receiveTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
