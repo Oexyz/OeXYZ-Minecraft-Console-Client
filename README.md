@@ -9,29 +9,64 @@
   A native Windows client for Minecraft Java chat and reliable AFK sessions.
 </p>
 
+OeXYZ Console Client is a lightweight **headless Minecraft Java Edition
+client**, **Minecraft console client**, and focused **AFK client** for Windows.
+It implements the Minecraft protocol directly, uses **no renderer**, supports
+**Microsoft authentication**, and connects to servers from Minecraft Java
+**1.8 through 26.2** without launching the Minecraft game.
+
 <p align="center">
+  <a href="https://github.com/Oexyz/OeXYZ-Console-Client/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/Oexyz/OeXYZ-Console-Client/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/Oexyz/OeXYZ-Console-Client/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Oexyz/OeXYZ-Console-Client?display_name=tag&sort=semver"></a>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-1389FD?logo=windows">
   <img alt="Minecraft Java 1.8 through 26.2" src="https://img.shields.io/badge/Minecraft%20Java-1.8%E2%80%9326.2-35c46a">
-  <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet">
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f">
+  <img alt="Protocols 47 through 776" src="https://img.shields.io/badge/protocols-47%E2%80%93776-8b5cf6">
+  <img alt="Eight deterministic tests" src="https://img.shields.io/badge/tests-8%20deterministic-35c46a">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
 </p>
 
 ![OeXYZ connected to a local Minecraft 26.2 server](docs/images/client-connected.png)
 
-OeXYZ keeps a real Minecraft Java session connected without starting the game
-renderer. Everything an end user needs is in one self-contained Windows
-release: no terminal, Node.js, Java runtime, or separate .NET installation.
+OeXYZ keeps a real Minecraft Java session connected for chat, commands,
+reconnect, and AFK use. Everything an end user needs is in one self-contained
+Windows release: no terminal, Node.js, Java runtime, Minecraft installation, or
+separate .NET installation.
 
 ## Download
 
 Download `OeXYZ-Console-Client-win-x64.zip` from the
-[latest GitHub release](../../releases/latest), extract it, and open
+[latest GitHub release](https://github.com/Oexyz/OeXYZ-Console-Client/releases/latest), extract it, and open
 `OeXYZ Console Client.exe`.
 
 The release also contains `SHA256SUMS`. The in-app updater checks the same
 manifest before accepting a downloaded archive. Windows may show a SmartScreen
 prompt for a new unsigned open-source publisher; verify the release source and
 checksum before choosing to run it.
+
+### Verify a release
+
+Every release archive receives a GitHub artifact attestation in the pinned
+[release workflow](.github/workflows/release.yml). With the
+[GitHub CLI](https://cli.github.com/) installed, download and verify the latest
+archive without trusting a copied checksum:
+
+```powershell
+gh release download --repo Oexyz/OeXYZ-Console-Client `
+  --pattern 'OeXYZ-Console-Client-win-x64.zip' `
+  --pattern 'SHA256SUMS'
+
+$expected = ((Get-Content SHA256SUMS -Raw) -split '\s+')[0]
+$actual = (Get-FileHash 'OeXYZ-Console-Client-win-x64.zip' -Algorithm SHA256).Hash
+if ($actual -ne $expected) { throw 'Release checksum mismatch.' }
+
+gh attestation verify 'OeXYZ-Console-Client-win-x64.zip' `
+  --repo Oexyz/OeXYZ-Console-Client
+```
+
+The attestation proves which GitHub repository and workflow produced the ZIP.
+The checksum detects corruption or substitution between the manifest and
+archive. Neither mechanism is a substitute for reviewing the repository owner
+and source code.
 
 ## What it can do
 
@@ -56,6 +91,24 @@ checksum before choosing to run it.
   appended in batches, and do not steal the scroll position while reading
   older messages.
 - Show newer server codes of conduct and require a deliberate approval click.
+
+## Choosing the right headless client
+
+OeXYZ, Mineflayer, and HeadlessMc solve different problems. This is a scope
+comparison, not a claim that one project is universally better:
+
+| | OeXYZ | Mineflayer | HeadlessMc |
+|---|---|---|---|
+| Primary role | Clickable Windows chat and AFK client | Programmable JavaScript bot API | Command-line launcher for the full Minecraft client |
+| Runs Minecraft game code | No; implements the protocol directly | No; connects as a bot | Yes; launches Minecraft headlessly |
+| End-user runtime | Self-contained Windows EXE | Node.js and a bot project | Java launcher or provided native build, plus game files |
+| Automation | Focused chat, commands, reconnect, respawn, anti-AFK | Broad scripting and bot ecosystem | Full-client and mod-driven control |
+| Mods | No | Not Minecraft client mods | Fabric, Forge, and NeoForge workflows |
+| Best fit | Non-developers who want a lightweight GUI for chat/AFK | Developers building automated agents | CI, mod testing, or full-client behavior without a screen |
+
+See the [full comparison with scope notes and official project
+sources](docs/COMPARISON.md). Feature sets change, so verify upstream
+documentation before choosing a tool.
 
 ## Public offline-mode proof
 
@@ -112,6 +165,7 @@ generator is in [`tools/protocol-catalog`](tools/protocol-catalog).
 See also:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Objective comparison](docs/COMPARISON.md)
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
 - [Testing evidence](docs/TESTING.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

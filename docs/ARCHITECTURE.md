@@ -1,7 +1,8 @@
 # Architecture
 
-OeXYZ is split into small components so the UI, protocol implementation, and
-test tooling remain auditable.
+OeXYZ implements the Minecraft Java protocol directly and does not launch
+Minecraft. It is split into small components so the UI, protocol
+implementation, and test tooling remain auditable.
 
 ```text
 OeXYZ.ConsoleClient (WinForms UI)
@@ -24,6 +25,9 @@ This library implements the network path independently in C#. It opens the TCP
 connection, writes the Minecraft handshake, negotiates compression and online
 mode encryption, progresses through configuration, and handles the small set of
 play packets needed by a renderer-free session.
+
+No Minecraft executable, client JAR, LWJGL renderer, game assets, mod loader, or
+game installation is loaded by this path.
 
 The committed `protocol-catalog.json` contains packet IDs, not executable code
 or game assets. The maintainer script derives it from the pinned MIT-licensed

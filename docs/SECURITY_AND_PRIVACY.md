@@ -27,12 +27,18 @@ OeXYZ makes outbound requests only when needed for a user action:
 |---|---|---|
 | Selected Minecraft server | Connect/status | Protocol packets, chosen profile name, chat entered by the user |
 | DNS resolver | Automatic port discovery | `_minecraft._tcp` SRV query for the selected host |
-| Microsoft/Xbox/Minecraft authentication services | Microsoft sign-in or refresh | OAuth/session data handled by the authentication library |
-| Minecraft session and certificate services | Online-mode login | Minecraft access token and server join hash |
-| GitHub API and release assets | User clicks Check for updates and accepts download | App version, standard HTTP metadata |
+| Microsoft/Xbox/Minecraft authentication services selected by the pinned authentication library | Microsoft sign-in or refresh | OAuth/session data handled by the authentication library |
+| `sessionserver.mojang.com/session/minecraft/join` | Online-mode server login | Minecraft access token, profile UUID, and server join hash |
+| `api.minecraftservices.com/player/certificates` | Secure-chat setup | Minecraft access token |
+| `api.github.com`, `github.com`, and GitHub's HTTPS release CDN | User clicks Check for updates and accepts download | App version and standard HTTP metadata; no account token |
 
 There is no telemetry, analytics, advertising, background update polling, or
 project-operated cloud service.
+
+Microsoft session material exists in process memory while it is needed. On
+disk, the account document is encrypted as one DPAPI `CurrentUser` payload.
+DPAPI prevents another ordinary Windows profile from simply decrypting a copied
+file; it cannot protect against software already executing as the same user.
 
 ## Threat boundaries
 

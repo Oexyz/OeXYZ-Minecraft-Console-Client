@@ -5,6 +5,19 @@ use semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Search-oriented README introduction, CI/release/protocol badges, and a
+  reproducible GitHub artifact-attestation verification guide.
+- Objective scope comparison with Mineflayer and HeadlessMc based on their
+  official project documentation.
+- Explicit Microsoft-token storage and outbound-network documentation.
+
+### Changed
+
+- Architecture documentation now states prominently that OeXYZ implements the
+  protocol directly and never launches Minecraft.
+
 ## [1.0.1] - 2026-08-11
 
 ### Fixed
