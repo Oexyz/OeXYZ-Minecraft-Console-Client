@@ -1,5 +1,7 @@
 using System.Net.Sockets;
 using System.Buffers.Binary;
+using System.Collections.ObjectModel;
+using OeXYZ.Core;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,6 +18,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private readonly MinecraftServicesClient servicesClient;
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource playReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly object playersLock = new();
+    private readonly Dictionary<Guid, PlayerListEntry> players = [];
+    private readonly object unknownPacketsLock = new();
+    private readonly Dictionary<string, long> unknownPackets = new(StringComparer.Ordinal);
     private TcpClient? tcpClient;
     private MinecraftPacketStream? packets;
     private Task? receiveTask;
@@ -25,6 +31,15 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private bool playerLoadedSent;
     private Guid? chatSessionUuid;
     private int chatSessionIndex;
+    private long connectedAtUtcTicks;
+    private long lastReceivedUtcTicks;
+    private long lastSentUtcTicks;
+    private long bytesReceived;
+    private long bytesSent;
+    private long packetsReceived;
+    private long packetsSent;
+    private int pingMilliseconds = -1;
+    private Exception? terminalException;
 
     public MinecraftConnection(string host, ushort port, string username, ProtocolDefinition protocol)
         : this(host, port, MinecraftIdentity.Offline(username), protocol)
@@ -80,6 +95,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public event Action? Died;
     public event Action<ConnectionState, int, int>? PacketObserved;
     public event Action<Exception>? ConnectionFaulted;
+    public event Action<ConnectionMetrics>? MetricsChanged;
+    public event Action<IReadOnlyList<PlayerListEntry>>? PlayerListChanged;
+    public event Action<PacketTrace>? PacketTraced;
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
 
@@ -87,6 +105,35 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public string MinecraftVersion => protocol.MinecraftVersion;
     public int ProtocolVersion => protocol.ProtocolVersion;
     public Task Completion => receiveTask ?? Task.CompletedTask;
+    public Exception? TerminalException => Volatile.Read(ref terminalException);
+
+    public ConnectionMetrics Metrics => new(
+        ReadTimestamp(ref connectedAtUtcTicks),
+        ReadTimestamp(ref lastReceivedUtcTicks),
+        ReadTimestamp(ref lastSentUtcTicks),
+        Interlocked.Read(ref bytesReceived),
+        Interlocked.Read(ref bytesSent),
+        Interlocked.Read(ref packetsReceived),
+        Interlocked.Read(ref packetsSent),
+        Volatile.Read(ref pingMilliseconds) < 0 ? null : Volatile.Read(ref pingMilliseconds));
+
+    public IReadOnlyList<PlayerListEntry> Players
+    {
+        get
+        {
+            lock (playersLock)
+                return players.Values.OrderBy(player => player.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
+    public IReadOnlyDictionary<string, long> UnknownPacketStatistics
+    {
+        get
+        {
+            lock (unknownPacketsLock)
+                return new ReadOnlyDictionary<string, long>(new Dictionary<string, long>(unknownPackets));
+        }
+    }
 
     public void Disconnect()
     {
@@ -111,6 +158,13 @@ public sealed class MinecraftConnection : IAsyncDisposable
         activeClient.Dispose();
     }
 
+    public void Abort(Exception reason)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        Interlocked.CompareExchange(ref terminalException, reason, null);
+        Disconnect();
+    }
+
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (state != ConnectionState.Disconnected) throw new InvalidOperationException("This connection has already been started.");
@@ -121,6 +175,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         await client.ConnectAsync(host, port, linked.Token).ConfigureAwait(false);
         packets = new MinecraftPacketStream(client.GetStream());
+        packets.PacketWritten += OnPacketWritten;
         Log?.Invoke($"TCP connection established to {host}:{port}.");
 
         await packets.WriteAsync(0, writer =>
@@ -161,7 +216,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             throw new NotSupportedException("Outgoing chat is not mapped for this protocol version.");
         }
 
-        Log?.Invoke($"Chat sent: {message}");
+        Log?.Invoke($"Chat sent: {SensitiveDataRedactor.RedactCommand(message)}");
     }
 
     public async Task RespawnAsync(CancellationToken cancellationToken = default)
@@ -188,10 +243,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task PerformAfkActionAsync(CancellationToken cancellationToken = default)
+    public Task PerformAfkActionAsync(float yawDegrees = 7.5F, CancellationToken cancellationToken = default)
     {
         PlayerPosition current = position;
-        float nextYaw = current.Yaw + 7.5F;
+        float safeYawDegrees = Math.Clamp(yawDegrees, 0.5F, 45F);
+        float nextYaw = current.Yaw + safeYawDegrees;
         if (nextYaw >= 180F) nextYaw -= 360F;
         position = current with { Yaw = nextYaw };
         return SendPositionAsync(cancellationToken);
@@ -242,7 +298,12 @@ public sealed class MinecraftConnection : IAsyncDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 InboundPacket packet = await stream.ReadAsync(cancellationToken).ConfigureAwait(false);
+                Interlocked.Add(ref bytesReceived, packet.WireLength);
+                Interlocked.Increment(ref packetsReceived);
+                Interlocked.Exchange(ref lastReceivedUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+                TracePacket(PacketDirection.Clientbound, state, packet.Id, packet.Payload.Length, packet.WireLength);
                 PacketObserved?.Invoke(state, packet.Id, packet.Payload.Length);
+                MetricsChanged?.Invoke(Metrics);
                 switch (state)
                 {
                     case ConnectionState.Login:
@@ -267,6 +328,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
         catch (Exception exception)
         {
+            Interlocked.CompareExchange(ref terminalException, exception, null);
             playReady.TrySetException(exception);
             ConnectionFaulted?.Invoke(exception);
             Log?.Invoke($"Connection ended: {exception.Message}");
@@ -468,6 +530,18 @@ public sealed class MinecraftConnection : IAsyncDisposable
             return;
         }
 
+        if (Is(inbound, "player_info", packet.Id) || Is(inbound, "player_info_update", packet.Id))
+        {
+            TryHandlePlayerInfo(packet.Payload, protocol.ProtocolVersion >= 761 || Is(inbound, "player_info_update", packet.Id));
+            return;
+        }
+
+        if (Is(inbound, "player_info_remove", packet.Id) || Is(inbound, "player_remove", packet.Id))
+        {
+            TryHandlePlayerInfoRemove(packet.Payload);
+            return;
+        }
+
         if (Is(inbound, "death_combat_event", packet.Id))
         {
             Died?.Invoke();
@@ -478,11 +552,18 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if (Is(inbound, "system_chat", packet.Id))
         {
             PacketReader reader = new(packet.Payload);
-            string text = protocol.ProtocolVersion >= 765
-                ? ChatTextCodec.FromAnonymousNbt(ref reader)
-                : ChatTextCodec.FromJson(reader.ReadString(262144));
+            FormattedChatText formatting;
+            if (protocol.ProtocolVersion >= 765)
+            {
+                string nbtText = ChatTextCodec.FromAnonymousNbt(ref reader);
+                formatting = ChatTextCodec.ParseLegacy(nbtText);
+            }
+            else
+            {
+                formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
+            }
             bool actionBar = reader.Remaining > 0 && reader.ReadBoolean();
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, text, actionBar));
+            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, actionBar, formatting));
             return;
         }
 
@@ -494,17 +575,25 @@ public sealed class MinecraftConnection : IAsyncDisposable
             _ = reader.ReadVarInt();
             if (reader.ReadBoolean()) _ = reader.ReadBytes(256);
             string text = reader.ReadString(256);
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, text));
+            FormattedChatText formatting = ChatTextCodec.ParseLegacy(text);
+            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             return;
         }
 
         if (Is(inbound, "profileless_chat", packet.Id))
         {
             PacketReader reader = new(packet.Payload);
-            string text = protocol.ProtocolVersion >= 765
-                ? ChatTextCodec.FromAnonymousNbt(ref reader)
-                : ChatTextCodec.FromJson(reader.ReadString(262144));
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, text));
+            FormattedChatText formatting;
+            if (protocol.ProtocolVersion >= 765)
+            {
+                string nbtText = ChatTextCodec.FromAnonymousNbt(ref reader);
+                formatting = ChatTextCodec.ParseLegacy(nbtText);
+            }
+            else
+            {
+                formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
+            }
+            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             return;
         }
 
@@ -512,8 +601,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             PacketReader reader = new(packet.Payload);
             string json = reader.ReadString(262144);
-            string text = ChatTextCodec.FromJson(json);
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, text));
+            FormattedChatText formatting = ChatTextCodec.ParseJson(json);
+            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             if (ChatTextCodec.TranslationKeyFromJson(json)?.StartsWith("death.", StringComparison.Ordinal) == true)
             {
                 Died?.Invoke();
@@ -799,11 +888,221 @@ public sealed class MinecraftConnection : IAsyncDisposable
             ? packetId
             : throw new NotSupportedException($"Packet '{name}' is not mapped for this protocol.");
 
+    private void OnPacketWritten(int packetId, int payloadBytes, int wireBytes)
+    {
+        Interlocked.Add(ref bytesSent, wireBytes);
+        Interlocked.Increment(ref packetsSent);
+        Interlocked.Exchange(ref lastSentUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
+        TracePacket(PacketDirection.Serverbound, state, packetId, payloadBytes, wireBytes);
+        MetricsChanged?.Invoke(Metrics);
+    }
+
+    private void TryHandlePlayerInfo(byte[] payload, bool modern)
+    {
+        try
+        {
+            PacketReader reader = new(payload);
+            if (modern) HandleModernPlayerInfo(ref reader);
+            else HandleLegacyPlayerInfo(ref reader);
+            RaisePlayerListChanged();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or ArgumentException)
+        {
+            Log?.Invoke($"Ignored malformed player-list update: {exception.Message}");
+        }
+    }
+
+    private void HandleLegacyPlayerInfo(ref PacketReader reader)
+    {
+        int action = reader.ReadVarInt();
+        int count = ReadBoundedCount(ref reader, 10_000, "player-list entries");
+        lock (playersLock)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                Guid uuid = reader.ReadUuid();
+                PlayerListEntry entry = players.GetValueOrDefault(uuid) ?? new PlayerListEntry(uuid, uuid.ToString("N"), -1, -1);
+                switch (action)
+                {
+                    case 0:
+                        string name = reader.ReadString(16);
+                        SkipProperties(ref reader);
+                        int gameMode = reader.ReadVarInt();
+                        int latency = reader.ReadVarInt();
+                        SkipOptionalChat(ref reader);
+                        entry = new PlayerListEntry(uuid, name, latency, gameMode);
+                        break;
+                    case 1:
+                        entry = entry with { GameMode = reader.ReadVarInt() };
+                        break;
+                    case 2:
+                        entry = entry with { PingMilliseconds = reader.ReadVarInt() };
+                        break;
+                    case 3:
+                        SkipOptionalChat(ref reader);
+                        break;
+                    case 4:
+                        players.Remove(uuid);
+                        continue;
+                    default:
+                        throw new InvalidDataException($"Unknown legacy player-list action {action}.");
+                }
+                players[uuid] = entry;
+                UpdateOwnPing(entry);
+            }
+        }
+    }
+
+    private void HandleModernPlayerInfo(ref PacketReader reader)
+    {
+        int actions = reader.ReadByte();
+        int count = ReadBoundedCount(ref reader, 10_000, "player-list entries");
+        lock (playersLock)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                Guid uuid = reader.ReadUuid();
+                PlayerListEntry entry = players.GetValueOrDefault(uuid) ?? new PlayerListEntry(uuid, uuid.ToString("N"), -1, -1);
+                if ((actions & 0x01) != 0)
+                {
+                    string name = reader.ReadString(16);
+                    SkipProperties(ref reader);
+                    entry = entry with { Name = name };
+                }
+                if ((actions & 0x02) != 0) SkipChatSession(ref reader);
+                if ((actions & 0x04) != 0) entry = entry with { GameMode = reader.ReadVarInt() };
+                if ((actions & 0x08) != 0) entry = entry with { Listed = reader.ReadBoolean() };
+                if ((actions & 0x10) != 0) entry = entry with { PingMilliseconds = reader.ReadVarInt() };
+                if ((actions & 0x20) != 0) SkipOptionalChat(ref reader);
+                if ((actions & 0x40) != 0) _ = reader.ReadBoolean();
+                if ((actions & 0x80) != 0) _ = reader.ReadVarInt();
+                players[uuid] = entry;
+                UpdateOwnPing(entry);
+            }
+        }
+    }
+
+    private void TryHandlePlayerInfoRemove(byte[] payload)
+    {
+        try
+        {
+            PacketReader reader = new(payload);
+            int count = ReadBoundedCount(ref reader, 10_000, "removed player-list entries");
+            lock (playersLock)
+            {
+                for (int index = 0; index < count; index++) players.Remove(reader.ReadUuid());
+            }
+            RaisePlayerListChanged();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or ArgumentException)
+        {
+            Log?.Invoke($"Ignored malformed player-list removal: {exception.Message}");
+        }
+    }
+
+    private static void SkipProperties(ref PacketReader reader)
+    {
+        int properties = ReadBoundedCount(ref reader, 1024, "player properties");
+        for (int property = 0; property < properties; property++)
+        {
+            _ = reader.ReadString(32767);
+            _ = reader.ReadString(32767);
+            if (reader.ReadBoolean()) _ = reader.ReadString(32767);
+        }
+    }
+
+    private static void SkipChatSession(ref PacketReader reader)
+    {
+        if (!reader.ReadBoolean()) return;
+        _ = reader.ReadUuid();
+        _ = reader.ReadLong();
+        SkipByteArray(ref reader, 1_048_576);
+        SkipByteArray(ref reader, 1_048_576);
+    }
+
+    private void SkipOptionalChat(ref PacketReader reader)
+    {
+        if (!reader.ReadBoolean()) return;
+        if (protocol.ProtocolVersion >= 765) _ = ChatTextCodec.FromAnonymousNbt(ref reader);
+        else _ = ChatTextCodec.FromJson(reader.ReadString(262144));
+    }
+
+    private static void SkipByteArray(ref PacketReader reader, int maximum)
+    {
+        int length = reader.ReadVarInt();
+        if (length < 0 || length > maximum) throw new InvalidDataException("Byte array is outside safety limits.");
+        _ = reader.ReadBytes(length);
+    }
+
+    private static int ReadBoundedCount(ref PacketReader reader, int maximum, string description)
+    {
+        int count = reader.ReadVarInt();
+        if (count < 0 || count > maximum) throw new InvalidDataException($"The number of {description} is outside safety limits.");
+        return count;
+    }
+
+    private void UpdateOwnPing(PlayerListEntry entry)
+    {
+        if (entry.Uuid == identity.PlayerUuid && entry.PingMilliseconds >= 0)
+            Volatile.Write(ref pingMilliseconds, entry.PingMilliseconds);
+    }
+
+    private void RaisePlayerListChanged()
+    {
+        IReadOnlyList<PlayerListEntry> snapshot = Players;
+        PlayerListChanged?.Invoke(snapshot);
+        MetricsChanged?.Invoke(Metrics);
+    }
+
+    private void TracePacket(
+        PacketDirection direction,
+        ConnectionState packetState,
+        int packetId,
+        int payloadBytes,
+        int wireBytes)
+    {
+        Dictionary<string, int> mappings = (packetState, direction) switch
+        {
+            (ConnectionState.Login, PacketDirection.Clientbound) => protocol.PacketIds.LoginClientbound,
+            (ConnectionState.Login, PacketDirection.Serverbound) => protocol.PacketIds.LoginServerbound,
+            (ConnectionState.Configuration, PacketDirection.Clientbound) => protocol.PacketIds.ConfigurationClientbound,
+            (ConnectionState.Configuration, PacketDirection.Serverbound) => protocol.PacketIds.ConfigurationServerbound,
+            (ConnectionState.Play, PacketDirection.Clientbound) => protocol.PacketIds.PlayClientbound,
+            (ConnectionState.Play, PacketDirection.Serverbound) => protocol.PacketIds.PlayServerbound,
+            _ => EmptyPacketMappings.Value
+        };
+        string? name = mappings.FirstOrDefault(pair => pair.Value == packetId).Key;
+        bool known = !string.IsNullOrEmpty(name);
+        name ??= $"unknown_0x{packetId:X2}";
+        if (!known)
+        {
+            string key = $"{packetState}:{direction}:0x{packetId:X2}";
+            lock (unknownPacketsLock)
+                unknownPackets[key] = unknownPackets.GetValueOrDefault(key) + 1;
+        }
+        PacketTraced?.Invoke(new PacketTrace(DateTimeOffset.Now, direction, packetState, packetId, name,
+            payloadBytes, wireBytes, known));
+    }
+
+    private static DateTimeOffset? ReadTimestamp(ref long value)
+    {
+        long ticks = Interlocked.Read(ref value);
+        return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+    }
+
+    private static class EmptyPacketMappings
+    {
+        public static readonly Dictionary<string, int> Value = [];
+    }
+
     private void SetState(ConnectionState value)
     {
         if (state == value) return;
         state = value;
+        if (value == ConnectionState.Play && Interlocked.Read(ref connectedAtUtcTicks) == 0)
+            Interlocked.Exchange(ref connectedAtUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
         StateChanged?.Invoke(value);
+        MetricsChanged?.Invoke(Metrics);
     }
 
     public async ValueTask DisposeAsync()

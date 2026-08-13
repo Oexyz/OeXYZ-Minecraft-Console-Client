@@ -23,6 +23,8 @@ Run("required packet maps", () =>
     True(latest.PacketIds.ConfigurationServerbound.ContainsKey("custom_payload"), "Configuration brand channel is missing.");
     True(latest.PacketIds.ConfigurationClientbound.ContainsKey("code_of_conduct"), "Code-of-conduct packet is missing.");
     True(latest.PacketIds.ConfigurationServerbound.ContainsKey("accept_code_of_conduct"), "Code-of-conduct response is missing.");
+    True(legacy.PacketIds.PlayClientbound.ContainsKey("player_info"), "Legacy player-list packet is missing.");
+    True(latest.PacketIds.PlayClientbound.ContainsKey("player_info") || latest.PacketIds.PlayClientbound.ContainsKey("player_info_update"), "Current player-list packet is missing.");
 });
 
 Run("server address parsing", () =>
@@ -63,6 +65,21 @@ Run("packet primitive round trip", () =>
     Equal(1234567890123456789L, reader.ReadLong());
     True(reader.ReadBoolean(), "Boolean packet value was not preserved.");
     Equal(0, reader.Remaining);
+});
+
+Run("chat formatting preserves styles without click actions", () =>
+{
+    FormattedChatText json = ChatTextCodec.ParseJson("{\"text\":\"Hello \u00a7aSteve\",\"bold\":true,\"extra\":[{\"text\":\"!\",\"italic\":true,\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/op me\"}}]}");
+    Equal("Hello Steve!", json.Text);
+    True(json.Runs.Any(run => run.Text.Contains("Hello", StringComparison.Ordinal) && run.Style.Bold), "Bold JSON style was lost.");
+    True(json.Runs.Any(run => run.Text.Contains("Steve", StringComparison.Ordinal) && run.Style.Color == "green"), "Legacy color was lost.");
+    True(json.Runs.Any(run => run.Text == "!" && run.Style.Italic), "Italic JSON style was lost.");
+    True(json.Text.IndexOf("/op me", StringComparison.Ordinal) < 0, "A click command leaked into rendered text.");
+
+    FormattedChatText legacy = ChatTextCodec.ParseLegacy("\u00a7cRed \u00a7nunder\u00a7r plain");
+    Equal("Red under plain", legacy.Text);
+    True(legacy.Runs.Any(run => run.Style.Color == "red"), "Legacy red color was not parsed.");
+    True(legacy.Runs.Any(run => run.Style.Underlined), "Legacy underline was not parsed.");
 });
 
 Run("connected socket disconnect completes", () =>
@@ -121,6 +138,21 @@ static async Task VerifyConnectedDisconnectAsync()
         // needed by the client, which lets this test keep the socket open and
         // prove that Disconnect(), rather than a server close, ends the session.
         await stream.WriteAsync(new byte[] { 1, 2, 1, 1 }, timeout.Token);
+        PacketWriter playerInfo = new();
+        playerInfo.WriteVarInt(0x38);
+        playerInfo.WriteVarInt(0);
+        playerInfo.WriteVarInt(1);
+        playerInfo.WriteUuid(OfflineIdentity.CreateUuid("DisconnectTest"));
+        playerInfo.WriteString("DisconnectTest", 16);
+        playerInfo.WriteVarInt(0);
+        playerInfo.WriteVarInt(1);
+        playerInfo.WriteVarInt(42);
+        playerInfo.WriteBoolean(false);
+        byte[] playerInfoBody = playerInfo.ToArray();
+        PacketWriter playerInfoFrame = new();
+        playerInfoFrame.WriteVarInt(playerInfoBody.Length);
+        playerInfoFrame.WriteBytes(playerInfoBody);
+        await stream.WriteAsync(playerInfoFrame.ToArray(), timeout.Token);
         await stream.FlushAsync(timeout.Token);
         await releaseServer.Task.WaitAsync(timeout.Token);
     }, timeout.Token);
@@ -131,6 +163,14 @@ static async Task VerifyConnectedDisconnectAsync()
         await using MinecraftConnection connection = new("127.0.0.1", (ushort)port, "DisconnectTest", protocol);
         await connection.ConnectAsync(timeout.Token);
         Equal(ConnectionState.Play, connection.State);
+        await WaitUntilAsync(() => connection.Players.Count == 1, TimeSpan.FromSeconds(2));
+        PlayerListEntry player = connection.Players.Single();
+        Equal("DisconnectTest", player.Name);
+        Equal(42, player.PingMilliseconds);
+        True(connection.Metrics.PacketsReceived >= 3, "Received packet metrics were not incremented.");
+        True(connection.Metrics.PacketsSent >= 3, "Sent packet metrics were not incremented.");
+        True(connection.Metrics.BytesReceived > 0 && connection.Metrics.BytesSent > 0, "Wire-byte metrics were not incremented.");
+        True(connection.Metrics.LastReceivedAt is not null, "Last receive activity was not recorded.");
 
         connection.Disconnect();
         connection.Disconnect();
@@ -142,5 +182,15 @@ static async Task VerifyConnectedDisconnectAsync()
         releaseServer.TrySetResult();
         await server.WaitAsync(TimeSpan.FromSeconds(2));
         listener.Stop();
+    }
+}
+
+static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+{
+    DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+    while (!condition())
+    {
+        if (DateTimeOffset.UtcNow >= deadline) throw new TimeoutException("The test condition was not reached.");
+        await Task.Delay(10);
     }
 }

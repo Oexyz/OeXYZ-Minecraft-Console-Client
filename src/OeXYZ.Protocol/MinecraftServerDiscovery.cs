@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace OeXYZ.Protocol;
@@ -9,7 +10,9 @@ public sealed record MinecraftServerStatus(
     int ProtocolVersion,
     int PlayersOnline,
     int PlayersMaximum,
-    string Description);
+    string Description,
+    int PingMilliseconds,
+    byte[]? ServerIconPng = null);
 
 public static class MinecraftServerDiscovery
 {
@@ -23,6 +26,7 @@ public static class MinecraftServerDiscovery
         using CancellationTokenSource timeoutSource = new(timeout ?? TimeSpan.FromSeconds(8));
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
         using TcpClient client = new() { NoDelay = true };
+        Stopwatch stopwatch = Stopwatch.StartNew();
         await client.ConnectAsync(endpoint.NetworkHost, endpoint.Port, linked.Token).ConfigureAwait(false);
         await using MinecraftPacketStream packets = new(client.GetStream());
         await packets.WriteAsync(0, writer =>
@@ -34,6 +38,7 @@ public static class MinecraftServerDiscovery
         }, linked.Token).ConfigureAwait(false);
         await packets.WriteAsync(0, null, linked.Token).ConfigureAwait(false);
         InboundPacket response = await packets.ReadAsync(linked.Token).ConfigureAwait(false);
+        stopwatch.Stop();
         if (response.Id != 0) throw new InvalidDataException("The server returned an invalid status packet.");
         PacketReader reader = new(response.Payload);
         string json = reader.ReadString(1_048_576);
@@ -56,7 +61,33 @@ public static class MinecraftServerDiscovery
                 ? Clean(descriptionElement.GetString())
                 : ChatTextCodec.FromJson(descriptionElement.GetRawText())
             : string.Empty;
-        return new MinecraftServerStatus(endpoint, versionName, protocolVersion, online, maximum, description);
+        byte[]? icon = root.TryGetProperty("favicon", out JsonElement favicon)
+            ? TryReadServerIcon(favicon.GetString())
+            : null;
+        return new MinecraftServerStatus(endpoint, versionName, protocolVersion, online, maximum,
+            description, checked((int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue)), icon);
+    }
+
+    private static byte[]? TryReadServerIcon(string? dataUrl)
+    {
+        const string prefix = "data:image/png;base64,";
+        if (string.IsNullOrWhiteSpace(dataUrl) ||
+            !dataUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            dataUrl.Length > 512_000)
+            return null;
+
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(dataUrl[prefix.Length..]);
+            return bytes.Length is > 8 and <= 256_000 &&
+                   bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })
+                ? bytes
+                : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     private static string Clean(string? text)

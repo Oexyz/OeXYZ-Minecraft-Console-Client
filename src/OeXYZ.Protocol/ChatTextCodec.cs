@@ -1,20 +1,91 @@
+using System.Text;
 using System.Text.Json;
 
 namespace OeXYZ.Protocol;
 
-internal static class ChatTextCodec
+public static class ChatTextCodec
 {
     public static string FromJson(string json)
+        => ParseJson(json).Text;
+
+    public static FormattedChatText ParseJson(string json)
     {
         try
         {
             using JsonDocument document = JsonDocument.Parse(json);
-            return StripLegacyFormatting(FlattenJson(document.RootElement));
+            List<ChatRun> runs = [];
+            AppendJson(document.RootElement, new ChatStyle(), runs);
+            return Build(runs);
         }
         catch (JsonException)
         {
-            return StripLegacyFormatting(json);
+            return ParseLegacy(json);
         }
+    }
+
+    public static FormattedChatText ParseLegacy(string text, ChatStyle? initialStyle = null)
+    {
+        List<ChatRun> runs = [];
+        ChatStyle style = initialStyle ?? new ChatStyle();
+        StringBuilder buffer = new();
+
+        void Flush()
+        {
+            if (buffer.Length == 0) return;
+            AppendRun(runs, buffer.ToString(), style);
+            buffer.Clear();
+        }
+
+        for (int index = 0; index < text.Length; index++)
+        {
+            if (text[index] != '§' || index + 1 >= text.Length)
+            {
+                buffer.Append(text[index]);
+                continue;
+            }
+
+            char code = char.ToLowerInvariant(text[++index]);
+            if (code == 'x' && TryReadHexColor(text, ref index, out string? hexColor))
+            {
+                Flush();
+                style = new ChatStyle(hexColor);
+                continue;
+            }
+
+            string? color = LegacyColor(code);
+            if (color is not null)
+            {
+                Flush();
+                style = new ChatStyle(color);
+                continue;
+            }
+
+            switch (code)
+            {
+                case 'l':
+                    Flush();
+                    style = style with { Bold = true };
+                    break;
+                case 'o':
+                    Flush();
+                    style = style with { Italic = true };
+                    break;
+                case 'n':
+                    Flush();
+                    style = style with { Underlined = true };
+                    break;
+                case 'm':
+                    Flush();
+                    style = style with { Strikethrough = true };
+                    break;
+                case 'r':
+                    Flush();
+                    style = initialStyle ?? new ChatStyle();
+                    break;
+            }
+        }
+        Flush();
+        return Build(runs);
     }
 
     public static string? TranslationKeyFromJson(string json)
@@ -56,6 +127,112 @@ internal static class ChatTextCodec
             _ => string.Empty
         };
     }
+
+    private static void AppendJson(JsonElement element, ChatStyle inherited, List<ChatRun> runs)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                AppendFormattedLegacy(runs, element.GetString() ?? string.Empty, inherited);
+                return;
+            case JsonValueKind.Array:
+                foreach (JsonElement child in element.EnumerateArray()) AppendJson(child, inherited, runs);
+                return;
+            case JsonValueKind.Object:
+                ChatStyle style = ReadStyle(element, inherited);
+                if (element.TryGetProperty("text", out JsonElement text))
+                    AppendJson(text, style, runs);
+                else if (element.TryGetProperty("translate", out JsonElement translate))
+                {
+                    string key = translate.GetString() ?? string.Empty;
+                    string[] arguments = element.TryGetProperty("with", out JsonElement with) && with.ValueKind == JsonValueKind.Array
+                        ? with.EnumerateArray().Select(FlattenJson).ToArray()
+                        : [];
+                    AppendFormattedLegacy(runs, Translate(key, arguments), style);
+                }
+                if (element.TryGetProperty("extra", out JsonElement extra)) AppendJson(extra, style, runs);
+                return;
+        }
+    }
+
+    private static ChatStyle ReadStyle(JsonElement element, ChatStyle inherited)
+    {
+        string? color = inherited.Color;
+        if (element.TryGetProperty("color", out JsonElement colorElement) && colorElement.ValueKind == JsonValueKind.String)
+        {
+            string? requested = colorElement.GetString();
+            color = string.Equals(requested, "reset", StringComparison.OrdinalIgnoreCase) ? null : requested;
+        }
+        return new ChatStyle(
+            color,
+            ReadBooleanStyle(element, "bold", inherited.Bold),
+            ReadBooleanStyle(element, "italic", inherited.Italic),
+            ReadBooleanStyle(element, "underlined", inherited.Underlined),
+            ReadBooleanStyle(element, "strikethrough", inherited.Strikethrough));
+    }
+
+    private static bool ReadBooleanStyle(JsonElement element, string name, bool inherited) =>
+        element.TryGetProperty(name, out JsonElement property) && property.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? property.GetBoolean()
+            : inherited;
+
+    private static void AppendFormattedLegacy(List<ChatRun> destination, string text, ChatStyle style)
+    {
+        FormattedChatText parsed = ParseLegacy(text, style);
+        foreach (ChatRun run in parsed.Runs) AppendRun(destination, run.Text, run.Style);
+    }
+
+    private static void AppendRun(List<ChatRun> runs, string text, ChatStyle style)
+    {
+        if (text.Length == 0) return;
+        if (runs.Count > 0 && runs[^1].Style == style)
+            runs[^1] = runs[^1] with { Text = runs[^1].Text + text };
+        else
+            runs.Add(new ChatRun(text, style));
+    }
+
+    private static FormattedChatText Build(List<ChatRun> runs) =>
+        new(string.Concat(runs.Select(run => run.Text)), runs.ToArray());
+
+    private static bool TryReadHexColor(string text, ref int index, out string? color)
+    {
+        int cursor = index + 1;
+        Span<char> digits = stackalloc char[6];
+        for (int digit = 0; digit < digits.Length; digit++)
+        {
+            if (cursor + 1 >= text.Length || text[cursor] != '§' || !Uri.IsHexDigit(text[cursor + 1]))
+            {
+                color = null;
+                return false;
+            }
+            digits[digit] = text[cursor + 1];
+            cursor += 2;
+        }
+        index = cursor - 1;
+        color = "#" + new string(digits);
+        return true;
+    }
+
+    private static string? LegacyColor(char code) => code switch
+    {
+        '0' => "black",
+        '1' => "dark_blue",
+        '2' => "dark_green",
+        '3' => "dark_aqua",
+        '4' => "dark_red",
+        '5' => "dark_purple",
+        '6' => "gold",
+        '7' => "gray",
+        '8' => "dark_gray",
+        '9' => "blue",
+        'a' => "green",
+        'b' => "aqua",
+        'c' => "red",
+        'd' => "light_purple",
+        'e' => "yellow",
+        'f' => "white",
+        _ => null
+    };
 
     private static string FlattenJsonObject(JsonElement element)
     {

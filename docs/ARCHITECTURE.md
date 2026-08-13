@@ -9,6 +9,10 @@ OeXYZ.ConsoleClient (WinForms UI)
 ├── profiles and encrypted account-session storage
 ├── session lifecycle, reconnect, anti-AFK and local logs
 ├── Microsoft browser-authentication adapter
+├── OeXYZ.Core
+│   ├── versioned profiles and backward-compatible migration
+│   ├── reconnect classification and bounded backoff
+│   └── non-sensitive command history
 ├── OeXYZ.Updater
 │   └── GitHub release lookup, bounded download and SHA-256 verification
 └── OeXYZ.Protocol
@@ -51,9 +55,17 @@ view with redraw suspended. If the user has scrolled up, the current selection
 and first visible line are restored; otherwise the view follows new messages.
 The view keeps 5,000 lines and trims 1,000 at a time.
 
-Network work never runs on the UI thread. Disconnecting cancels connection,
-anti-AFK, retry, and authentication operations through linked cancellation
-tokens.
+Network work never runs on the UI thread. Protocol callbacks update immutable
+session snapshots; the GUI samples those snapshots without blocking packet
+processing. Disconnecting cancels connection, monitor, anti-AFK, retry, and
+authentication operations through linked cancellation tokens. The reconnect
+loop owns each connection with `await using`, so failed attempts do not retain
+sockets, timers, or packet handlers.
+
+`OeXYZ.Core` is UI-neutral. In v1.1 it owns profiles, migration, reconnect
+policy, and command history. The remaining session orchestration is being moved
+behind that boundary for the v1.2 CLI; `OeXYZ.Core` and `OeXYZ.Protocol` have no
+WinForms dependency.
 
 ## Update trust boundary
 

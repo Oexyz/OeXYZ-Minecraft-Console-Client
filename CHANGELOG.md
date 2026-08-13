@@ -5,6 +5,40 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-13
+
+### Added
+
+- Compact session dashboard for version/protocol, health, hunger, XYZ, look
+  direction, ping, uptime, reconnects, packet activity, bytes and packet counts.
+- Live TAB player list with copy-name and prepare-message actions.
+- Searchable/filterable Minecraft-formatted chat and per-session command history
+  that excludes recognized login/register/password commands.
+- Cached asynchronous server overview with status latency, protocol, player
+  counts, MOTD, resolved endpoint and validated server icons.
+- Explicit Windows tray mode and configurable local notifications.
+- Versioned profile migration through a platform-neutral `OeXYZ.Core` project.
+
+### Changed
+
+- Reconnect now classifies user, permanent and transient disconnects, applies a
+  bounded exponential backoff, exposes the next attempt, honors an optional
+  attempt limit and resets after a stable connection.
+- Anti-AFK interval and look angle are profile settings rather than hard-coded.
+- Session logs are written asynchronously and include filter categories.
+- The GUI declares Per-Monitor V2 DPI awareness.
+
+### Fixed
+
+- Stalled sockets are conservatively detected from real packet activity.
+- Current 26.2 player-info action flags are decoded as the protocol's one-byte
+  bit field, including hat/list-order updates.
+- Session toolbar buttons remain visible at the supported minimum window size;
+  automated UI tests confirm Disconnect stops a session and Close removes its
+  tab without closing the app.
+- Chat stays anchored only when already following the newest line, avoiding the
+  full-buffer jump reported in earlier builds.
+
 ## [1.0.3] - 2026-08-11
 
 ### Added

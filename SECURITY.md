@@ -5,6 +5,12 @@
 Security fixes are provided for the newest release. Update through the in-app
 checker or the repository's Releases page and verify `SHA256SUMS`.
 
+Releases are not Authenticode-signed. The project does not create or require a
+signing certificate. GitHub artifact attestations and the published SHA-256
+manifest provide workflow provenance and integrity checks, but do not create a
+Windows publisher identity; SmartScreen or Smart App Control can therefore warn
+or block according to local Windows policy.
+
 ## Reporting a vulnerability
 
 Please use GitHub's private security-advisory feature for this repository. Do

@@ -21,7 +21,7 @@ It implements the Minecraft protocol directly, uses **no renderer**, supports
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-1389FD?logo=windows">
   <img alt="Minecraft Java 1.8 through 26.2" src="https://img.shields.io/badge/Minecraft%20Java-1.8%E2%80%9326.2-35c46a">
   <img alt="Protocols 47 through 776" src="https://img.shields.io/badge/protocols-47%E2%80%93776-8b5cf6">
-  <img alt="Eight deterministic tests" src="https://img.shields.io/badge/tests-8%20deterministic-35c46a">
+  <img alt="Sixteen deterministic tests" src="https://img.shields.io/badge/tests-16%20deterministic-35c46a">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
 </p>
 
@@ -39,11 +39,11 @@ Download `OeXYZ-Console-Client-win-x64.zip` from the
 `OeXYZ Console Client.exe`.
 
 The release also contains `SHA256SUMS`. The in-app updater checks the same
-manifest before accepting a downloaded archive. Current GitHub releases are
-unsigned while trusted code signing is being arranged. SmartScreen may warn,
-and Windows 11 with Smart App Control enabled can block an unsigned build
-entirely. The checksum and GitHub attestation verify integrity and build origin,
-but they do not replace a Windows Authenticode signature.
+manifest before accepting a downloaded archive. Releases are deliberately
+**not Authenticode-signed**. SmartScreen may warn, and Windows 11 with Smart App
+Control enabled can block an unsigned build. SHA-256 and GitHub's build
+attestation verify archive integrity and workflow provenance, but neither
+replaces an Authenticode publisher identity.
 
 ### Verify a release
 
@@ -84,11 +84,25 @@ and source code.
 - Use a clearly labelled offline-mode name on servers that intentionally allow
   that authentication mode.
 - Read live server messages, send chat and commands, and keep a local log.
+- See a compact live dashboard with health, hunger, XYZ/look direction, real
+  server-reported player ping, uptime, reconnect count, last packet, traffic,
+  and packet counters.
+- Search and filter chat without losing the stable scroll position; render
+  Minecraft colors, bold, italic, underline, and strikethrough; copy or clear
+  the view; and recall non-sensitive commands with Up/Down.
+- Inspect the live TAB/player list, copy a player name, or prepare (but never
+  automatically send) `/msg <player>`.
+- See cached, non-blocking online status, latency, version, protocol, player
+  count, MOTD, resolved endpoint, and server icon in the profile list.
 - Handle keepalive, position, teleport confirmation, player-loaded state,
   compression, secure chat sessions, and the 26.x configuration phase.
 - Send `/respawn` through the correct native packet, automatically respawn after
-  death, reconnect with bounded backoff, and optionally send a small look change
-  every 45 seconds.
+  death, classify disconnects before retrying, reconnect with bounded
+  exponential backoff, detect stalled sockets conservatively, and optionally
+  send a configurable small look change.
+- Continue sessions explicitly in the Windows tray, connect or disconnect all
+  profiles from its menu, and opt into local disconnect/reconnect/death/mention
+  and private-message notifications.
 - Keep the chat view stable under heavy output: incoming lines are queued,
   appended in batches, and do not steal the scroll position while reading
   older messages.
@@ -138,6 +152,17 @@ and is not affiliated with or endorsed by OeXYZ. Details and limitations are in
 7. Type chat, `/commands`, or `/respawn` in the field at the bottom. All other
    controls are clickable; a command window is never required.
 
+Useful session controls:
+
+- `Ctrl+F` focuses search; `Ctrl+L` clears the visible chat.
+- Up/Down navigates the per-session command history. Login/register/password
+  commands are deliberately excluded from that history.
+- **Players** toggles the live TAB list. Double-clicking a player only prepares
+  `/msg`; it does not send anything.
+- **Settings** controls tray behavior and local notifications. Closing continues
+  in the tray only when that option is explicitly enabled; tray **Exit** always
+  shuts sessions down cleanly.
+
 <details>
 <summary>Welcome screen</summary>
 
@@ -170,6 +195,7 @@ See also:
 - [Objective comparison](docs/COMPARISON.md)
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
 - [Testing evidence](docs/TESTING.md)
+- [Screenshots](docs/SCREENSHOTS.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 
@@ -194,6 +220,7 @@ pinned `minecraft-data` version.
 ```powershell
 dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
 dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
+dotnet run --project tests/OeXYZ.Core.Tests -c Release --no-build
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
 dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
 dotnet publish src/OeXYZ.ConsoleClient -c Release -r win-x64 --self-contained true
@@ -209,6 +236,29 @@ npm run generate:protocol
 The generated catalog currently contains 74 release mappings from protocol 47
 through protocol 776. Release automation verifies that regenerating it produces
 no uncommitted difference.
+
+## Roadmap
+
+### v1.1 — Session experience ✅ complete
+
+Live dashboard and metrics, intelligent reconnect, stale-connection monitoring,
+tray mode, local notifications, searchable/formatted chat, command history,
+live player list, cached server overview, custom-port stability, and Per-Monitor
+V2 DPI scaling.
+
+### v1.2 — Headless and reliability 🚧 in progress
+
+Shared GUI/CLI session core, `oexyz` headless commands and reversible PATH
+setup, session groups/restore, configurable Anti-AFK, quick/startup commands,
+log viewer, redacted diagnostics, protocol inspector, fuzz/replay coverage,
+Windows ARM64 releases, and an architecture-aware rollback updater.
+
+### v1.3 — Linux, Docker, and Raspberry Pi 📋 planned
+
+Planned—not currently claimed as supported: Linux x64/ARM64 headless builds,
+Raspberry Pi 4/5 and Raspberry Pi OS 64-bit, systemd, non-root multi-architecture
+Docker images, persistent config/log volumes, health checks, graceful SIGTERM,
+and resource-conscious multi-session 24/7 operation.
 
 ## Responsible use
 

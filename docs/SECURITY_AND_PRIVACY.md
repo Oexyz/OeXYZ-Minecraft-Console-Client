@@ -35,6 +35,11 @@ OeXYZ makes outbound requests only when needed for a user action:
 There is no telemetry, analytics, advertising, background update polling, or
 project-operated cloud service.
 
+Windows releases are not Authenticode-signed. Release ZIPs are instead hashed
+with SHA-256 and attested by GitHub Actions. Those controls let users verify the
+download against this repository's workflow, but they cannot make Windows show
+a verified publisher and do not override SmartScreen or Smart App Control.
+
 Microsoft session material exists in process memory while it is needed. On
 disk, the account document is encrypted as one DPAPI `CurrentUser` payload.
 DPAPI prevents another ordinary Windows profile from simply decrypting a copied

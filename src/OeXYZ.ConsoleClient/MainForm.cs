@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using OeXYZ.Core;
+using OeXYZ.Protocol;
 
 namespace OeXYZ.ConsoleClient;
 
 internal sealed class MainForm : Form
 {
-    private readonly ProfileRepository repository = new();
+    private readonly ProfileRepository repository = new(AppPaths.Profiles);
     private readonly AuthenticationService authentication = new();
     private readonly object saveLock = new();
     private readonly bool demoMode;
@@ -14,8 +16,20 @@ internal sealed class MainForm : Form
     private readonly BrandTabControl sessions = new();
     private readonly Label summary = new();
     private readonly Button connect = Theme.Button("Connect", 130);
+    private readonly CancellationTokenSource formLifetime = new();
+    private readonly Dictionary<Guid, CachedServerStatus> serverStatusCache = [];
+    private readonly NotifyIcon trayIcon = new();
+    private readonly ContextMenuStrip trayMenu = new();
+    private readonly ImageList serverIcons = new()
+    {
+        ImageSize = new Size(32, 32),
+        ColorDepth = ColorDepth.Depth32Bit,
+        TransparentColor = Color.Transparent
+    };
     private ProfileDocument profiles;
     private bool closing;
+    private bool allowExit;
+    private bool trayHintShown;
 
     public MainForm(string[] args)
     {
@@ -42,15 +56,22 @@ internal sealed class MainForm : Form
         Font = Theme.Body;
         AutoScaleMode = AutoScaleMode.Dpi;
         Icon = LoadIcon();
+        BuildTray();
 
         Panel sidebar = BuildSidebar();
         BuildWorkspace();
         Controls.Add(sessions);
         Controls.Add(sidebar);
         FormClosing += FormIsClosing;
+        Resize += (_, _) =>
+        {
+            if (WindowState == FormWindowState.Minimized && profiles.Settings.MinimizeToTray)
+                HideToTray();
+        };
         Shown += (_, _) =>
         {
             Theme.ApplyDarkTitleBar(this);
+            QueueStatusRefresh();
             if (demoMode)
             {
                 WindowState = FormWindowState.Maximized;
@@ -114,6 +135,7 @@ internal sealed class MainForm : Form
             ("Remove", RemoveAccount)), 0, 3);
         layout.Controls.Add(Heading("Servers"), 0, 4);
         ConfigureList(servers, "Server", "Address");
+        servers.SmallImageList = serverIcons;
         servers.DoubleClick += (_, _) => EditServer();
         layout.Controls.Add(servers, 0, 5);
         layout.Controls.Add(ButtonRow(
@@ -154,10 +176,13 @@ internal sealed class MainForm : Form
             WrapContents = false,
             BackColor = Theme.Sidebar
         };
-        Button updates = Theme.Button("Check for updates", 150);
-        Button about = Theme.Button("About & safety", 130);
+        Button settings = Theme.Button("Settings", 92);
+        Button updates = Theme.Button("Updates", 92);
+        Button about = Theme.Button("About", 92);
+        settings.Click += (_, _) => ShowSettings();
         updates.Click += (_, _) => UpdateDialog.ShowFor(this);
         about.Click += (_, _) => ShowAbout();
+        auxiliary.Controls.Add(settings);
         auxiliary.Controls.Add(updates);
         auxiliary.Controls.Add(about);
         layout.Controls.Add(auxiliary, 0, 9);
@@ -293,6 +318,7 @@ internal sealed class MainForm : Form
         list.HideSelection = false;
         list.MultiSelect = false;
         list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+        list.ShowItemToolTips = true;
         list.Columns.Add(firstColumn, 145);
         list.Columns.Add(secondColumn, 190);
         list.Resize += (_, _) =>
@@ -343,6 +369,7 @@ internal sealed class MainForm : Form
         }
         summary.Text = $"{profiles.Accounts.Count} account{(profiles.Accounts.Count == 1 ? string.Empty : "s")}  ·  " +
                        $"{profiles.Servers.Count} server{(profiles.Servers.Count == 1 ? string.Empty : "s")}";
+        QueueStatusRefresh();
     }
 
     private void AddAccount()
@@ -432,16 +459,33 @@ internal sealed class MainForm : Form
             return;
         }
 
+        ConnectProfile(account, server);
+    }
+
+    private void ConnectProfile(AccountProfile account, ServerProfile server)
+    {
+        SessionTab? existing = sessions.TabPages.OfType<SessionTab>().FirstOrDefault(page =>
+            page.Session.Account.Id == account.Id && page.Session.Server.Id == server.Id);
+        if (existing is not null)
+        {
+            sessions.SelectedTab = existing;
+            return;
+        }
+
         ConsoleSession session = new(account, server, authentication, ProfilesChangedFromSession);
         SessionTab page = new(session);
+        session.NotificationRequested += ShowSessionNotification;
+        session.ConnectedChanged += _ => PostToUi(UpdateTrayMenu);
         page.CloseRequested += (_, _) =>
         {
             sessions.TabPages.Remove(page);
             page.Dispose();
+            UpdateTrayMenu();
         };
         sessions.TabPages.Add(page);
         sessions.SelectedTab = page;
         session.Start();
+        UpdateTrayMenu();
     }
 
     private void ProfilesChangedFromSession()
@@ -488,6 +532,233 @@ internal sealed class MainForm : Form
             "Microsoft passwords are never handled. Account sessions are encrypted by Windows DPAPI for the current user. " +
             "Server chat is stored only in the local logs folder.",
             "About & safety", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void ShowSettings()
+    {
+        using SettingsDialog dialog = new(profiles.Settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
+        profiles = profiles with { Settings = dialog.Result };
+        SaveAndRefresh(SelectedId(accounts), SelectedId(servers));
+    }
+
+    private void BuildTray()
+    {
+        trayIcon.Icon = Icon ?? SystemIcons.Application;
+        trayIcon.Text = "OeXYZ Minecraft Console Client";
+        trayIcon.ContextMenuStrip = trayMenu;
+        trayIcon.Visible = true;
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+        trayMenu.Opening += (_, _) => UpdateTrayMenu();
+        UpdateTrayMenu();
+    }
+
+    private void UpdateTrayMenu()
+    {
+        if (trayMenu.IsDisposed) return;
+        trayMenu.Items.Clear();
+        ToolStripMenuItem title = new("OeXYZ Minecraft Console Client") { Enabled = false };
+        trayMenu.Items.Add(title);
+        SessionTab[] pages = sessions.TabPages.OfType<SessionTab>().ToArray();
+        if (pages.Length == 0)
+        {
+            trayMenu.Items.Add(new ToolStripMenuItem("No active sessions") { Enabled = false });
+        }
+        else
+        {
+            foreach (SessionTab page in pages.Take(8))
+            {
+                SessionSnapshot snapshot = page.Session.Snapshot;
+                ToolStripMenuItem item = new(
+                    $"{(snapshot.IsConnected ? "●" : "○")} {page.Session.Title}",
+                    null,
+                    (_, _) =>
+                    {
+                        RestoreFromTray();
+                        sessions.SelectedTab = page;
+                    });
+                trayMenu.Items.Add(item);
+            }
+        }
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add("Connect all profiles", null, (_, _) => ConnectAll());
+        trayMenu.Items.Add("Disconnect all", null, (_, _) => DisconnectAll());
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add("Open window", null, (_, _) => RestoreFromTray());
+        trayMenu.Items.Add("Exit", null, (_, _) => RequestExit());
+    }
+
+    private void ConnectAll()
+    {
+        AccountProfile? account = SelectedAccount() ?? profiles.Accounts.FirstOrDefault();
+        if (account is null)
+        {
+            RestoreFromTray();
+            MessageBox.Show(this, "Add an account profile first.", Text,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        foreach (ServerProfile server in profiles.Servers) ConnectProfile(account, server);
+    }
+
+    private void DisconnectAll()
+    {
+        foreach (SessionTab page in sessions.TabPages.OfType<SessionTab>()) page.Session.Stop();
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        if (trayHintShown) return;
+        trayHintShown = true;
+        trayIcon.BalloonTipTitle = "OeXYZ is still running";
+        trayIcon.BalloonTipText = "Sessions continue in the background. Use the tray icon to reopen or exit.";
+        trayIcon.ShowBalloonTip(5000);
+    }
+
+    private void RequestExit()
+    {
+        allowExit = true;
+        Close();
+    }
+
+    private void ShowSessionNotification(SessionNotification notification)
+    {
+        if (closing || !profiles.Settings.NotificationsEnabled || !NotificationEnabled(notification.Kind)) return;
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => ShowSessionNotification(notification));
+            return;
+        }
+        trayIcon.BalloonTipTitle = notification.Title;
+        trayIcon.BalloonTipText = notification.Message.Length <= 240
+            ? notification.Message
+            : notification.Message[..240] + "…";
+        trayIcon.ShowBalloonTip(5000);
+    }
+
+    private bool NotificationEnabled(SessionNotificationKind kind) => kind switch
+    {
+        SessionNotificationKind.Disconnect => profiles.Settings.NotifyDisconnect,
+        SessionNotificationKind.Reconnect => profiles.Settings.NotifyReconnect,
+        SessionNotificationKind.Death => profiles.Settings.NotifyDeath,
+        SessionNotificationKind.Mention => profiles.Settings.NotifyMention,
+        SessionNotificationKind.PrivateMessage => profiles.Settings.NotifyPrivateMessage,
+        _ => true
+    };
+
+    private void QueueStatusRefresh()
+    {
+        if (!IsHandleCreated || IsDisposed || closing) return;
+        Observe(RefreshServerStatusesAsync(formLifetime.Token));
+    }
+
+    private async Task RefreshServerStatusesAsync(CancellationToken cancellationToken)
+    {
+        ServerProfile[] snapshot = profiles.Servers.ToArray();
+        using SemaphoreSlim concurrency = new(4);
+        Task[] tasks = snapshot.Select(async server =>
+        {
+            CachedServerStatus? cached;
+            lock (serverStatusCache) serverStatusCache.TryGetValue(server.Id, out cached);
+            if (cached is not null && DateTimeOffset.UtcNow - cached.CheckedAt < TimeSpan.FromSeconds(45))
+            {
+                PostServerStatus(server.Id, cached);
+                return;
+            }
+            await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                CachedServerStatus result;
+                try
+                {
+                    MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(
+                        server.Address, server.CustomPort, TimeSpan.FromSeconds(6), cancellationToken).ConfigureAwait(false);
+                    result = new CachedServerStatus(DateTimeOffset.UtcNow, status, null);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    result = new CachedServerStatus(DateTimeOffset.UtcNow, null, exception.Message);
+                }
+                lock (serverStatusCache) serverStatusCache[server.Id] = result;
+                PostServerStatus(server.Id, result);
+            }
+            finally
+            {
+                concurrency.Release();
+            }
+        }).ToArray();
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    private void PostServerStatus(Guid serverId, CachedServerStatus result)
+    {
+        if (!IsHandleCreated || IsDisposed || closing) return;
+        BeginInvoke(() => ApplyServerStatus(serverId, result));
+    }
+
+    private void PostToUi(Action action)
+    {
+        if (closing || IsDisposed || !IsHandleCreated) return;
+        try { BeginInvoke(action); }
+        catch (InvalidOperationException) when (closing || IsDisposed) { }
+    }
+
+    private void ApplyServerStatus(Guid serverId, CachedServerStatus cached)
+    {
+        ListViewItem? item = servers.Items.Cast<ListViewItem>().FirstOrDefault(candidate =>
+            candidate.Tag is Guid id && id == serverId);
+        ServerProfile? profile = profiles.Servers.FirstOrDefault(candidate => candidate.Id == serverId);
+        if (item is null || profile is null || item.SubItems.Count < 2) return;
+        string address = profile.Address + (profile.CustomPort > 0 ? $":{profile.CustomPort}" : string.Empty);
+        if (cached.Status is MinecraftServerStatus statusResult)
+        {
+            item.SubItems[1].Text = $"{address} · ONLINE {statusResult.PingMilliseconds} ms · " +
+                                    $"{statusResult.PlayersOnline}/{statusResult.PlayersMaximum} · {statusResult.VersionName}";
+            item.ToolTipText = $"{statusResult.Description}\nProtocol {statusResult.ProtocolVersion}\n" +
+                               $"Resolved endpoint {statusResult.Address.NetworkHost}:{statusResult.Address.Port}";
+            if (statusResult.ServerIconPng is { Length: > 0 })
+            {
+                try
+                {
+                    using MemoryStream stream = new(statusResult.ServerIconPng, writable: false);
+                    using Image source = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: true);
+                    using Bitmap scaled = new(source, serverIcons.ImageSize);
+                    string key = serverId.ToString("N");
+                    if (serverIcons.Images.ContainsKey(key)) serverIcons.Images.RemoveByKey(key);
+                    serverIcons.Images.Add(key, scaled);
+                    item.ImageKey = key;
+                }
+                catch (ArgumentException)
+                {
+                    item.ImageIndex = -1;
+                }
+            }
+        }
+        else
+        {
+            item.SubItems[1].Text = $"{address} · OFFLINE";
+            item.ToolTipText = cached.Error ?? "The server did not answer the Minecraft status ping.";
+        }
+    }
+
+    private static void Observe(Task task)
+    {
+        _ = task.ContinueWith(completed =>
+        {
+            _ = completed.Exception;
+        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     private static void OpenPath(string path)
@@ -567,10 +838,27 @@ internal sealed class MainForm : Form
     private async void FormIsClosing(object? sender, FormClosingEventArgs eventArgs)
     {
         if (closing) return;
+        if (!allowExit && eventArgs.CloseReason == CloseReason.UserClosing && profiles.Settings.KeepRunningOnClose)
+        {
+            eventArgs.Cancel = true;
+            HideToTray();
+            return;
+        }
         eventArgs.Cancel = true;
         closing = true;
+        formLifetime.Cancel();
         SessionTab[] open = sessions.TabPages.OfType<SessionTab>().ToArray();
         foreach (SessionTab page in open) await page.CloseAsync();
+        trayIcon.Visible = false;
+        trayIcon.Dispose();
+        trayMenu.Dispose();
+        serverIcons.Dispose();
+        formLifetime.Dispose();
         Close();
     }
+
+    private sealed record CachedServerStatus(
+        DateTimeOffset CheckedAt,
+        MinecraftServerStatus? Status,
+        string? Error);
 }

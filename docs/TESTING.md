@@ -1,6 +1,6 @@
 # Testing
 
-Last verified: **2026-08-11** on Windows 11 x64 with .NET SDK 10.0.302.
+Last verified: **2026-08-13** on Windows 11 x64 with .NET SDK 10.0.302.
 
 ## Deterministic tests
 
@@ -12,11 +12,21 @@ temporary-file closure on Windows, and rejection plus cleanup of a mismatched
 checksum:
 
 ```powershell
+dotnet run --project tests/OeXYZ.Core.Tests -c Release
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release
 dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release
 ```
 
-Expected results: `PASS: 5 protocol tests` and `PASS: 3 updater tests`.
+Expected results: `PASS: 6 core tests`, `PASS: 7 protocol tests`, and
+`PASS: 3 updater tests`.
+
+The v1.1 run additionally performed a real GUI restart test against the local
+26.2 server: the initial connection reached Play, the server process was
+stopped, OeXYZ classified the socket loss as transient, scheduled 5- and
+10-second bounded backoff attempts, and reached Play again after the server
+returned. Windows UI Automation separately invoked **Disconnect** and **Close**
+and verified that the first stopped the session while the second removed its tab
+without terminating the application.
 
 ## Local end-to-end servers
 
@@ -31,7 +41,7 @@ repository or release.
 | Minecraft Java 1.16.5 | 754 | Offline login, compression, brand, position, chat send/receive | Pass |
 | Minecraft Java 1.20.1 | 763 | Offline login, compression, brand, position, chat send/receive | Pass |
 | Minecraft Java 1.21.5 | 770 | Login, configuration, compression, brand, position, player-loaded acknowledgement, chat | Pass |
-| Minecraft Java 26.2 | 776 | Login, configuration, compression, brand, player-loaded acknowledgement, chat, death, respawn | Pass |
+| Minecraft Java 26.2 | 776 | Login, configuration, compression, brand, player-loaded acknowledgement, player list, metrics, chat, death, respawn, live reconnect | Pass |
 
 The six local servers used non-default ports from `25566` through `25571` to
 cover custom-port handling. Separate discovery checks verified the default port

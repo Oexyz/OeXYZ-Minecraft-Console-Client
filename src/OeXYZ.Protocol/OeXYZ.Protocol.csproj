@@ -5,6 +5,7 @@
     <RootNamespace>OeXYZ.Protocol</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
     <EmbeddedResource Include="Resources\protocol-catalog.json" />
   </ItemGroup>
 </Project>

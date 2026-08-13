@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using OeXYZ.Core;
 using OeXYZ.Protocol;
 
 namespace OeXYZ.ConsoleClient;
@@ -23,6 +24,8 @@ internal sealed class AccountDialog : Form
         BackColor = Theme.Background;
         ForeColor = Theme.Ink;
         Font = Theme.Body;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScroll = true;
         Shown += (_, _) => Theme.ApplyDarkTitleBar(this);
 
         AddField("Friendly name", nameBox, 22);
@@ -115,16 +118,26 @@ internal sealed class ServerDialog : Form
     private readonly TextBox addressBox = new();
     private readonly NumericUpDown portBox = new();
     private readonly ComboBox versionBox = new();
+    private readonly TextBox groupBox = new();
     private readonly CheckBox afkBox = new();
     private readonly CheckBox reconnectBox = new();
     private readonly CheckBox respawnBox = new();
+    private readonly NumericUpDown afkIntervalBox = new();
+    private readonly NumericUpDown afkJitterBox = new();
+    private readonly NumericUpDown afkYawBox = new();
+    private readonly NumericUpDown reconnectInitialBox = new();
+    private readonly NumericUpDown reconnectMaximumBox = new();
+    private readonly NumericUpDown reconnectAttemptsBox = new();
+    private readonly NumericUpDown staleTimeoutBox = new();
     private readonly ServerProfile? existing;
 
     public ServerDialog(ServerProfile? server)
     {
         existing = server;
         Text = server is null ? "Add server" : "Edit server";
-        ClientSize = new Size(500, 410);
+        ClientSize = new Size(500, 700);
+        AutoScroll = true;
+        AutoScrollMinSize = new Size(480, 800);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
@@ -132,6 +145,7 @@ internal sealed class ServerDialog : Form
         BackColor = Theme.Background;
         ForeColor = Theme.Ink;
         Font = Theme.Body;
+        AutoScaleMode = AutoScaleMode.Dpi;
         Shown += (_, _) => Theme.ApplyDarkTitleBar(this);
 
         AddField("Friendly name", nameBox, 22);
@@ -157,12 +171,29 @@ internal sealed class ServerDialog : Form
                      .Select(value => value.MinecraftVersion).Distinct().Reverse())
             versionBox.Items.Add(version);
 
-        ConfigureCheckBox(afkBox, "Anti-AFK look movement every 45 seconds", 236);
-        ConfigureCheckBox(reconnectBox, "Reconnect automatically with safe backoff", 268);
-        ConfigureCheckBox(respawnBox, "Respawn automatically after death", 300);
+        AddField("Session group", groupBox, 226);
+        groupBox.PlaceholderText = "Optional, for example AFK or Survival";
+        ConfigureCheckBox(afkBox, "Enable harmless Anti-AFK look updates", 276);
+        ConfigureCheckBox(reconnectBox, "Reconnect transient failures automatically", 308);
+        ConfigureCheckBox(respawnBox, "Respawn automatically after death", 340);
+        ConfigureNumeric("Anti-AFK interval", afkIntervalBox, 380, 10, 3600, "seconds");
+        ConfigureNumeric("Anti-AFK jitter", afkJitterBox, 430, 0, 300, "± seconds");
+        ConfigureNumeric("Anti-AFK yaw", afkYawBox, 480, 0.5M, 45, "degrees");
+        afkYawBox.DecimalPlaces = 1;
+        afkYawBox.Increment = 0.5M;
+        ConfigureNumeric("Reconnect initial", reconnectInitialBox, 530, 1, 300, "seconds");
+        ConfigureNumeric("Reconnect maximum", reconnectMaximumBox, 580, 1, 3600, "seconds");
+        ConfigureNumeric("Reconnect attempts", reconnectAttemptsBox, 630, 0, 9999, "0 = unlimited");
+        ConfigureNumeric("Stale timeout", staleTimeoutBox, 680, 60, 900, "seconds without packets");
         afkBox.Checked = true;
         reconnectBox.Checked = true;
         respawnBox.Checked = true;
+        afkIntervalBox.Value = 45;
+        afkJitterBox.Value = 5;
+        afkYawBox.Value = 7.5M;
+        reconnectInitialBox.Value = 5;
+        reconnectMaximumBox.Value = 60;
+        staleTimeoutBox.Value = 120;
         versionBox.Text = "auto";
         if (server is not null)
         {
@@ -170,16 +201,24 @@ internal sealed class ServerDialog : Form
             addressBox.Text = server.Address;
             portBox.Value = server.CustomPort;
             versionBox.Text = server.Version;
+            groupBox.Text = server.Group;
             afkBox.Checked = server.AntiAfk;
             reconnectBox.Checked = server.AutoReconnect;
             respawnBox.Checked = server.AutoRespawn;
+            afkIntervalBox.Value = Math.Clamp(server.AntiAfkIntervalSeconds, 10, 3600);
+            afkJitterBox.Value = Math.Clamp(server.AntiAfkJitterSeconds, 0, 300);
+            afkYawBox.Value = Math.Clamp((decimal)server.AntiAfkYawDegrees, 0.5M, 45M);
+            reconnectInitialBox.Value = Math.Clamp(server.ReconnectInitialDelaySeconds, 1, 300);
+            reconnectMaximumBox.Value = Math.Clamp(server.ReconnectMaximumDelaySeconds, 1, 3600);
+            reconnectAttemptsBox.Value = Math.Clamp(server.ReconnectMaximumAttempts, 0, 9999);
+            staleTimeoutBox.Value = Math.Clamp(server.StaleConnectionTimeoutSeconds, 60, 900);
         }
 
         Button save = Theme.Button("Save", 90);
-        save.Location = new Point(290, 350);
+        save.Location = new Point(290, 742);
         Theme.Primary(save);
         Button cancel = Theme.Button("Cancel", 90);
-        cancel.Location = new Point(388, 350);
+        cancel.Location = new Point(388, 742);
         cancel.DialogResult = DialogResult.Cancel;
         save.Click += SaveClicked;
         Controls.Add(save);
@@ -209,6 +248,32 @@ internal sealed class ServerDialog : Form
         Controls.Add(checkBox);
     }
 
+    private void ConfigureNumeric(
+        string caption,
+        NumericUpDown control,
+        int top,
+        decimal minimum,
+        decimal maximum,
+        string suffix)
+    {
+        Label label = new() { Text = caption, Location = new Point(20, top + 4), Size = new Size(165, 25) };
+        control.Location = new Point(190, top);
+        control.Size = new Size(130, 26);
+        control.Minimum = minimum;
+        control.Maximum = maximum;
+        Theme.Input(control);
+        Label help = new()
+        {
+            Text = suffix,
+            Location = new Point(330, top + 4),
+            Size = new Size(148, 24),
+            ForeColor = Theme.Muted
+        };
+        Controls.Add(label);
+        Controls.Add(control);
+        Controls.Add(help);
+    }
+
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {
         try
@@ -220,15 +285,25 @@ internal sealed class ServerDialog : Form
             _ = ServerAddress.Parse(address, decimal.ToInt32(portBox.Value));
             if (!string.Equals(version, "auto", StringComparison.OrdinalIgnoreCase))
                 _ = ProtocolCatalog.LoadEmbedded().Resolve(version);
-            Result = new ServerProfile
+            if (reconnectMaximumBox.Value < reconnectInitialBox.Value)
+                throw new FormatException("The maximum reconnect delay cannot be shorter than the initial delay.");
+            ServerProfile basis = existing ?? new ServerProfile { Id = Guid.NewGuid() };
+            Result = basis with
             {
-                Id = existing?.Id ?? Guid.NewGuid(),
                 DisplayName = name,
                 Address = address,
                 CustomPort = decimal.ToInt32(portBox.Value),
                 Version = version,
+                Group = groupBox.Text.Trim(),
                 AntiAfk = afkBox.Checked,
+                AntiAfkIntervalSeconds = decimal.ToInt32(afkIntervalBox.Value),
+                AntiAfkJitterSeconds = decimal.ToInt32(afkJitterBox.Value),
+                AntiAfkYawDegrees = decimal.ToSingle(afkYawBox.Value),
                 AutoReconnect = reconnectBox.Checked,
+                ReconnectInitialDelaySeconds = decimal.ToInt32(reconnectInitialBox.Value),
+                ReconnectMaximumDelaySeconds = decimal.ToInt32(reconnectMaximumBox.Value),
+                ReconnectMaximumAttempts = decimal.ToInt32(reconnectAttemptsBox.Value),
+                StaleConnectionTimeoutSeconds = decimal.ToInt32(staleTimeoutBox.Value),
                 AutoRespawn = respawnBox.Checked
             };
             DialogResult = DialogResult.OK;
@@ -238,5 +313,156 @@ internal sealed class ServerDialog : Form
         {
             MessageBox.Show(this, exception.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+}
+
+internal sealed class SettingsDialog : Form
+{
+    private readonly ApplicationSettings existing;
+    private readonly CheckBox minimizeToTray = new();
+    private readonly CheckBox keepRunningOnClose = new();
+    private readonly CheckBox notifications = new();
+    private readonly CheckBox disconnect = new();
+    private readonly CheckBox reconnect = new();
+    private readonly CheckBox death = new();
+    private readonly CheckBox mention = new();
+    private readonly CheckBox privateMessage = new();
+    private readonly ComboBox retention = new();
+
+    public SettingsDialog(ApplicationSettings settings)
+    {
+        existing = settings;
+        Text = "OeXYZ settings";
+        ClientSize = new Size(540, 500);
+        MinimumSize = new Size(520, 480);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        StartPosition = FormStartPosition.CenterParent;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        BackColor = Theme.Background;
+        ForeColor = Theme.Ink;
+        Font = Theme.Body;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScroll = true;
+        Shown += (_, _) => Theme.ApplyDarkTitleBar(this);
+
+        TableLayoutPanel layout = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 12,
+            Padding = new Padding(24, 20, 24, 18),
+            BackColor = Theme.Background
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        for (int index = 1; index < 10; index++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+
+        Label heading = Theme.Heading("Windows & notifications", 15F);
+        heading.Text = "Windows & notifications";
+        layout.Controls.Add(heading, 0, 0);
+        AddCheck(layout, minimizeToTray, "Minimize the window to the system tray", 1, settings.MinimizeToTray);
+        AddCheck(layout, keepRunningOnClose, "Keep sessions running when the window is closed", 2, settings.KeepRunningOnClose);
+        AddCheck(layout, notifications, "Enable local Windows notifications", 3, settings.NotificationsEnabled);
+        AddCheck(layout, disconnect, "Notify on disconnect", 4, settings.NotifyDisconnect);
+        AddCheck(layout, reconnect, "Notify after a successful reconnect", 5, settings.NotifyReconnect);
+        AddCheck(layout, death, "Notify when the player dies", 6, settings.NotifyDeath);
+        AddCheck(layout, mention, "Notify when the player name is mentioned", 7, settings.NotifyMention);
+        AddCheck(layout, privateMessage, "Notify for recognized private messages", 8, settings.NotifyPrivateMessage);
+
+        FlowLayoutPanel retentionRow = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Theme.Background
+        };
+        Label retentionLabel = new()
+        {
+            Text = "Keep logs:",
+            Width = 110,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = Theme.Ink
+        };
+        retention.Items.AddRange(["30 days", "90 days", "Unlimited"]);
+        retention.DropDownStyle = ComboBoxStyle.DropDownList;
+        retention.Width = 160;
+        retention.SelectedIndex = settings.LogRetentionDays switch { 30 => 0, 0 => 2, _ => 1 };
+        Theme.Input(retention);
+        retentionRow.Controls.Add(retentionLabel);
+        retentionRow.Controls.Add(retention);
+        layout.Controls.Add(retentionRow, 0, 9);
+
+        Label explanation = new()
+        {
+            Dock = DockStyle.Fill,
+            Text = "Closing only continues in the tray when you explicitly enable it. " +
+                   "Exit from the tray menu always shuts down sessions cleanly.",
+            ForeColor = Theme.Muted
+        };
+        layout.Controls.Add(explanation, 0, 10);
+
+        FlowLayoutPanel actions = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Theme.Background
+        };
+        Button cancel = Theme.Button("Cancel", 90);
+        cancel.DialogResult = DialogResult.Cancel;
+        Button save = Theme.Button("Save", 90);
+        Theme.Primary(save);
+        save.Click += (_, _) => Save();
+        actions.Controls.Add(cancel);
+        actions.Controls.Add(save);
+        layout.Controls.Add(actions, 0, 11);
+        Controls.Add(layout);
+        AcceptButton = save;
+        CancelButton = cancel;
+
+        notifications.CheckedChanged += (_, _) => UpdateNotificationControls();
+        UpdateNotificationControls();
+    }
+
+    public ApplicationSettings? Result { get; private set; }
+
+    private static void AddCheck(
+        TableLayoutPanel layout,
+        CheckBox checkBox,
+        string text,
+        int row,
+        bool value)
+    {
+        checkBox.Text = text;
+        checkBox.Checked = value;
+        checkBox.Dock = DockStyle.Fill;
+        checkBox.ForeColor = Theme.Ink;
+        layout.Controls.Add(checkBox, 0, row);
+    }
+
+    private void UpdateNotificationControls()
+    {
+        foreach (CheckBox child in new[] { disconnect, reconnect, death, mention, privateMessage })
+            child.Enabled = notifications.Checked;
+    }
+
+    private void Save()
+    {
+        Result = existing with
+        {
+            MinimizeToTray = minimizeToTray.Checked,
+            KeepRunningOnClose = keepRunningOnClose.Checked,
+            NotificationsEnabled = notifications.Checked,
+            NotifyDisconnect = disconnect.Checked,
+            NotifyReconnect = reconnect.Checked,
+            NotifyDeath = death.Checked,
+            NotifyMention = mention.Checked,
+            NotifyPrivateMessage = privateMessage.Checked,
+            LogRetentionDays = retention.SelectedIndex switch { 0 => 30, 2 => 0, _ => 90 }
+        };
+        DialogResult = DialogResult.OK;
+        Close();
     }
 }

@@ -1,3 +1,5 @@
+using OeXYZ.Core;
+
 namespace OeXYZ.ConsoleClient;
 
 internal static class Program
@@ -33,7 +35,8 @@ internal static class CrashReporter
         {
             Directory.CreateDirectory(AppPaths.Logs);
             string path = Path.Combine(AppPaths.Logs, "application-crash.log");
-            File.AppendAllText(path, $"{DateTimeOffset.Now:O}{Environment.NewLine}{exception}{Environment.NewLine}{Environment.NewLine}");
+            string safeException = SensitiveDataRedactor.RedactText(exception.ToString());
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O}{Environment.NewLine}{safeException}{Environment.NewLine}{Environment.NewLine}");
             MessageBox.Show(
                 $"OeXYZ caught an unexpected error. No account token was written to this log.\n\n{exception.Message}\n\nLog: {path}",
                 "OeXYZ Console Client",

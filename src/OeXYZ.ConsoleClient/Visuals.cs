@@ -253,7 +253,16 @@ internal sealed class BrandListView : ListView
         Color backgroundColor = selected ? Color.FromArgb(21, 83, 137) :
             eventArgs.ItemIndex % 2 == 0 ? Theme.DarkSurface : Theme.Surface;
         using (SolidBrush background = new(backgroundColor)) eventArgs.Graphics.FillRectangle(background, eventArgs.Bounds);
-        Rectangle textBounds = new(eventArgs.Bounds.Left + 8, eventArgs.Bounds.Top, Math.Max(0, eventArgs.Bounds.Width - 12), eventArgs.Bounds.Height);
+        int textLeft = eventArgs.Bounds.Left + 8;
+        if (eventArgs.ColumnIndex == 0 && eventArgs.Item.ImageIndex >= 0 &&
+            eventArgs.Item.ListView?.SmallImageList is ImageList images)
+        {
+            int top = eventArgs.Bounds.Top + Math.Max(0, (eventArgs.Bounds.Height - images.ImageSize.Height) / 2);
+            images.Draw(eventArgs.Graphics, eventArgs.Bounds.Left + 5, top, eventArgs.Item.ImageIndex);
+            textLeft += images.ImageSize.Width + 5;
+        }
+        Rectangle textBounds = new(textLeft, eventArgs.Bounds.Top,
+            Math.Max(0, eventArgs.Bounds.Right - textLeft - 4), eventArgs.Bounds.Height);
         TextRenderer.DrawText(eventArgs.Graphics, eventArgs.SubItem.Text, Font, textBounds,
             selected || eventArgs.ColumnIndex == 0 ? Theme.Ink : Theme.Muted,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);

@@ -5,12 +5,14 @@ namespace OeXYZ.Protocol;
 
 internal sealed class MinecraftPacketStream : IAsyncDisposable
 {
-    private const int MaximumPacketLength = 2 * 1024 * 1024;
+    internal const int MaximumPacketLength = 2 * 1024 * 1024;
     private readonly Stream stream;
     private Stream readStream;
     private Stream writeStream;
     private readonly SemaphoreSlim writeLock = new(1, 1);
     private int compressionThreshold = -1;
+
+    public event Action<int, int, int>? PacketWritten;
 
     public MinecraftPacketStream(Stream stream)
     {
@@ -39,7 +41,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
 
     public async ValueTask<InboundPacket> ReadAsync(CancellationToken cancellationToken)
     {
-        int frameLength = await ReadVarIntAsync(cancellationToken).ConfigureAwait(false);
+        (int frameLength, int prefixBytes) = await ReadVarIntAsync(cancellationToken).ConfigureAwait(false);
         if (frameLength <= 0 || frameLength > MaximumPacketLength)
             throw new InvalidDataException($"Invalid packet frame length: {frameLength}.");
 
@@ -76,13 +78,14 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
 
         PacketReader packetReader = new(packetData);
         int packetId = packetReader.ReadVarInt();
-        return new InboundPacket(packetId, packetReader.ReadRemaining().ToArray());
+        return new InboundPacket(packetId, packetReader.ReadRemaining().ToArray(), prefixBytes + frameLength);
     }
 
     public async ValueTask WriteAsync(int packetId, Action<PacketWriter>? writePayload, CancellationToken cancellationToken)
     {
         PacketWriter packet = new();
         packet.WriteVarInt(packetId);
+        int packetIdLength = packet.Length;
         writePayload?.Invoke(packet);
         byte[] packetBytes = packet.ToArray();
 
@@ -119,6 +122,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
         {
             await writeStream.WriteAsync(output, cancellationToken).ConfigureAwait(false);
             await writeStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            PacketWritten?.Invoke(packetId, packetBytes.Length - packetIdLength, output.Length);
         }
         finally
         {
@@ -126,7 +130,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
         }
     }
 
-    private async ValueTask<int> ReadVarIntAsync(CancellationToken cancellationToken)
+    private async ValueTask<(int Value, int BytesRead)> ReadVarIntAsync(CancellationToken cancellationToken)
     {
         int result = 0;
         byte[] oneByte = new byte[1];
@@ -135,7 +139,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
             await readStream.ReadExactlyAsync(oneByte, cancellationToken).ConfigureAwait(false);
             byte current = oneByte[0];
             result |= (current & 0x7F) << position;
-            if ((current & 0x80) == 0) return result;
+            if ((current & 0x80) == 0) return (result, position / 7 + 1);
         }
 
         throw new InvalidDataException("Frame VarInt is too large.");
@@ -159,4 +163,4 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
     }
 }
 
-internal sealed record InboundPacket(int Id, byte[] Payload);
+internal sealed record InboundPacket(int Id, byte[] Payload, int WireLength);

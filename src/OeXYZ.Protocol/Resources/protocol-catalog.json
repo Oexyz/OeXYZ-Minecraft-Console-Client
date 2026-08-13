@@ -36,7 +36,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -75,7 +76,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -114,7 +116,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -153,7 +156,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -192,7 +196,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -231,7 +236,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -270,7 +276,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -309,7 +316,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -348,7 +356,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -387,7 +396,8 @@
           "position": 8,
           "chat": 2,
           "update_health": 6,
-          "respawn": 7
+          "respawn": 7,
+          "player_info": 56
         },
         "playServerbound": {
           "keep_alive": 0,
@@ -426,7 +436,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -466,7 +477,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -506,7 +518,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -546,7 +559,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -586,7 +600,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -626,7 +641,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -666,7 +682,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -706,7 +723,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -746,7 +764,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -786,7 +805,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -826,7 +846,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 62,
-          "respawn": 51
+          "respawn": 51,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -866,7 +887,8 @@
           "position": 46,
           "chat": 15,
           "update_health": 64,
-          "respawn": 52
+          "respawn": 52,
+          "player_info": 45
         },
         "playServerbound": {
           "keep_alive": 12,
@@ -906,7 +928,8 @@
           "position": 47,
           "chat": 15,
           "update_health": 65,
-          "respawn": 53
+          "respawn": 53,
+          "player_info": 46
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -946,7 +969,8 @@
           "position": 47,
           "chat": 15,
           "update_health": 65,
-          "respawn": 53
+          "respawn": 53,
+          "player_info": 46
         },
         "playServerbound": {
           "keep_alive": 11,
@@ -988,7 +1012,8 @@
           "position": 50,
           "chat": 14,
           "update_health": 68,
-          "respawn": 56
+          "respawn": 56,
+          "player_info": 48
         },
         "playServerbound": {
           "keep_alive": 14,
@@ -1030,7 +1055,8 @@
           "position": 50,
           "chat": 14,
           "update_health": 68,
-          "respawn": 56
+          "respawn": 56,
+          "player_info": 48
         },
         "playServerbound": {
           "keep_alive": 14,
@@ -1072,7 +1098,8 @@
           "position": 50,
           "chat": 14,
           "update_health": 68,
-          "respawn": 56
+          "respawn": 56,
+          "player_info": 48
         },
         "playServerbound": {
           "keep_alive": 14,
@@ -1114,7 +1141,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 72,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1156,7 +1184,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 72,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1198,7 +1227,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 72,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1240,7 +1270,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 72,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1282,7 +1313,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 72,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1324,7 +1356,8 @@
           "position": 54,
           "chat": 15,
           "update_health": 73,
-          "respawn": 59
+          "respawn": 59,
+          "player_info": 52
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1366,7 +1399,8 @@
           "position": 54,
           "chat": 15,
           "update_health": 73,
-          "respawn": 59
+          "respawn": 59,
+          "player_info": 52
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1408,7 +1442,8 @@
           "position": 54,
           "chat": 15,
           "update_health": 73,
-          "respawn": 59
+          "respawn": 59,
+          "player_info": 52
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1450,7 +1485,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 73,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1492,7 +1528,8 @@
           "position": 53,
           "chat": 14,
           "update_health": 73,
-          "respawn": 58
+          "respawn": 58,
+          "player_info": 51
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1534,7 +1571,8 @@
           "position": 52,
           "chat": 14,
           "update_health": 73,
-          "respawn": 57
+          "respawn": 57,
+          "player_info": 50
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1576,7 +1614,8 @@
           "position": 52,
           "chat": 14,
           "update_health": 73,
-          "respawn": 57
+          "respawn": 57,
+          "player_info": 50
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1618,7 +1657,8 @@
           "position": 52,
           "chat": 14,
           "update_health": 73,
-          "respawn": 57
+          "respawn": 57,
+          "player_info": 50
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1660,7 +1700,8 @@
           "position": 52,
           "chat": 14,
           "update_health": 73,
-          "respawn": 57
+          "respawn": 57,
+          "player_info": 50
         },
         "playServerbound": {
           "keep_alive": 16,
@@ -1704,7 +1745,8 @@
           "update_health": 82,
           "death_combat_event": 53,
           "respawn": 61,
-          "ping": 48
+          "ping": 48,
+          "player_info": 54
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1749,7 +1791,8 @@
           "update_health": 82,
           "death_combat_event": 53,
           "respawn": 61,
-          "ping": 48
+          "ping": 48,
+          "player_info": 54
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1794,7 +1837,8 @@
           "update_health": 82,
           "death_combat_event": 53,
           "respawn": 61,
-          "ping": 48
+          "ping": 48,
+          "player_info": 54
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1839,7 +1883,8 @@
           "update_health": 82,
           "death_combat_event": 53,
           "respawn": 61,
-          "ping": 48
+          "ping": 48,
+          "player_info": 54
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1884,7 +1929,8 @@
           "update_health": 82,
           "death_combat_event": 53,
           "respawn": 61,
-          "ping": 48
+          "ping": 48,
+          "player_info": 54
         },
         "playServerbound": {
           "keep_alive": 15,
@@ -1930,7 +1976,8 @@
           "update_health": 82,
           "death_combat_event": 51,
           "respawn": 59,
-          "ping": 45
+          "ping": 45,
+          "player_info": 52
         },
         "playServerbound": {
           "keep_alive": 17,
@@ -1977,7 +2024,8 @@
           "update_health": 82,
           "death_combat_event": 51,
           "respawn": 59,
-          "ping": 45
+          "ping": 45,
+          "player_info": 52
         },
         "playServerbound": {
           "keep_alive": 17,
@@ -2024,7 +2072,8 @@
           "update_health": 85,
           "death_combat_event": 54,
           "respawn": 62,
-          "ping": 47
+          "ping": 47,
+          "player_info": 55
         },
         "playServerbound": {
           "keep_alive": 18,
@@ -2072,7 +2121,9 @@
           "update_health": 83,
           "death_combat_event": 52,
           "respawn": 61,
-          "ping": 46
+          "ping": 46,
+          "player_info": 54,
+          "player_remove": 53
         },
         "playServerbound": {
           "keep_alive": 17,
@@ -2121,7 +2172,9 @@
           "update_health": 87,
           "death_combat_event": 56,
           "respawn": 65,
-          "ping": 50
+          "ping": 50,
+          "player_info": 58,
+          "player_remove": 57
         },
         "playServerbound": {
           "keep_alive": 18,
@@ -2170,7 +2223,9 @@
           "update_health": 87,
           "death_combat_event": 56,
           "respawn": 65,
-          "ping": 50
+          "ping": 50,
+          "player_info": 58,
+          "player_remove": 57
         },
         "playServerbound": {
           "keep_alive": 18,
@@ -2219,7 +2274,9 @@
           "update_health": 87,
           "death_combat_event": 56,
           "respawn": 65,
-          "ping": 50
+          "ping": 50,
+          "player_info": 58,
+          "player_remove": 57
         },
         "playServerbound": {
           "keep_alive": 18,
@@ -2284,7 +2341,9 @@
           "death_combat_event": 58,
           "respawn": 67,
           "start_configuration": 101,
-          "ping": 51
+          "ping": 51,
+          "player_info": 60,
+          "player_remove": 59
         },
         "playServerbound": {
           "keep_alive": 20,
@@ -2353,6 +2412,8 @@
           "respawn": 69,
           "start_configuration": 103,
           "ping": 51,
+          "player_info": 60,
+          "player_remove": 59,
           "add_resource_pack": 68,
           "remove_resource_pack": 67
         },
@@ -2423,6 +2484,8 @@
           "respawn": 69,
           "start_configuration": 103,
           "ping": 51,
+          "player_info": 60,
+          "player_remove": 59,
           "add_resource_pack": 68,
           "remove_resource_pack": 67
         },
@@ -2501,6 +2564,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -2579,6 +2644,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -2657,6 +2724,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -2735,6 +2804,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -2813,6 +2884,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -2891,6 +2964,8 @@
           "respawn": 76,
           "start_configuration": 112,
           "ping": 55,
+          "player_info": 64,
+          "player_remove": 63,
           "add_resource_pack": 75,
           "remove_resource_pack": 74
         },
@@ -2969,6 +3044,8 @@
           "respawn": 76,
           "start_configuration": 112,
           "ping": 55,
+          "player_info": 64,
+          "player_remove": 63,
           "add_resource_pack": 75,
           "remove_resource_pack": 74
         },
@@ -3048,6 +3125,8 @@
           "respawn": 75,
           "start_configuration": 111,
           "ping": 54,
+          "player_info": 63,
+          "player_remove": 62,
           "add_resource_pack": 74,
           "remove_resource_pack": 73
         },
@@ -3127,6 +3206,8 @@
           "respawn": 75,
           "start_configuration": 111,
           "ping": 54,
+          "player_info": 63,
+          "player_remove": 62,
           "add_resource_pack": 74,
           "remove_resource_pack": 73
         },
@@ -3206,6 +3287,8 @@
           "respawn": 71,
           "start_configuration": 105,
           "ping": 53,
+          "player_info": 62,
+          "player_remove": 61,
           "add_resource_pack": 70,
           "remove_resource_pack": 69
         },
@@ -3284,6 +3367,8 @@
           "respawn": 75,
           "start_configuration": 111,
           "ping": 54,
+          "player_info": 63,
+          "player_remove": 62,
           "add_resource_pack": 74,
           "remove_resource_pack": 73
         },
@@ -3365,6 +3450,8 @@
           "respawn": 80,
           "start_configuration": 116,
           "ping": 59,
+          "player_info": 68,
+          "player_remove": 67,
           "add_resource_pack": 79,
           "remove_resource_pack": 78
         },
@@ -3446,6 +3533,8 @@
           "respawn": 80,
           "start_configuration": 116,
           "ping": 59,
+          "player_info": 68,
+          "player_remove": 67,
           "add_resource_pack": 79,
           "remove_resource_pack": 78
         },
@@ -3527,6 +3616,8 @@
           "respawn": 80,
           "start_configuration": 116,
           "ping": 59,
+          "player_info": 68,
+          "player_remove": 67,
           "add_resource_pack": 79,
           "remove_resource_pack": 78
         },
@@ -3608,6 +3699,8 @@
           "respawn": 82,
           "start_configuration": 118,
           "ping": 61,
+          "player_info": 70,
+          "player_remove": 69,
           "add_resource_pack": 81,
           "remove_resource_pack": 80
         },
@@ -3689,6 +3782,8 @@
           "respawn": 82,
           "start_configuration": 118,
           "ping": 61,
+          "player_info": 70,
+          "player_remove": 69,
           "add_resource_pack": 81,
           "remove_resource_pack": 80
         },
@@ -3770,6 +3865,8 @@
           "respawn": 82,
           "start_configuration": 118,
           "ping": 61,
+          "player_info": 70,
+          "player_remove": 69,
           "add_resource_pack": 81,
           "remove_resource_pack": 80
         },
@@ -3851,6 +3948,8 @@
           "respawn": 82,
           "start_configuration": 118,
           "ping": 61,
+          "player_info": 70,
+          "player_remove": 69,
           "add_resource_pack": 81,
           "remove_resource_pack": 80
         },

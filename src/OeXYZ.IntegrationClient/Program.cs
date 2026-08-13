@@ -66,6 +66,13 @@ client.HealthChanged += (health, food) =>
     }
 };
 client.ChatReceived += line => Console.WriteLine($"CHAT={line.Text}");
+client.PlayerListChanged += players => Console.WriteLine(
+    $"PLAYERS={players.Count};NAMES={string.Join(',', players.Select(player => player.Name))}");
+client.MetricsChanged += metrics =>
+{
+    if (metrics.PacketsReceived % 100 == 0 && metrics.PacketsReceived > 0)
+        Console.WriteLine($"METRICS=RX:{metrics.BytesReceived}/{metrics.PacketsReceived};TX:{metrics.BytesSent}/{metrics.PacketsSent};PING:{metrics.PingMilliseconds}");
+};
 if (tracePackets) client.PacketObserved += (state, id, length) => Console.WriteLine($"PACKET={state}:0x{id:X2}:{length}");
 if (tracePackets) client.ConnectionFaulted += exception => Console.WriteLine(exception);
 

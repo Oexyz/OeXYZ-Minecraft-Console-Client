@@ -1,6 +1,7 @@
 using CmlLib.Core.Auth;
 using CmlLib.Core.Auth.Microsoft;
 using CmlLib.Core.Auth.Microsoft.Sessions;
+using OeXYZ.Core;
 using OeXYZ.Protocol;
 using XboxAuthNet.Game.Accounts;
 

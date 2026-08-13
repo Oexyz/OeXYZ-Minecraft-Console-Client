@@ -12,7 +12,8 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>1.0.3</Version>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>1.1.0</Version>
     <Authors>OeXYZ contributors</Authors>
     <Product>OeXYZ Console Client</Product>
     <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>
@@ -22,6 +23,7 @@
     <PackageProjectUrl>https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client</PackageProjectUrl>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
     <ProjectReference Include="..\OeXYZ.Updater\OeXYZ.Updater.csproj" />
     <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />

@@ -2,8 +2,14 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
-      "oexyz.protocol": {
+      "oexyz.core": {
         "type": "Project"
+      },
+      "oexyz.protocol": {
+        "type": "Project",
+        "dependencies": {
+          "OeXYZ.Core": "[1.0.0, )"
+        }
       }
     }
   }
