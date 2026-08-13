@@ -5,6 +5,14 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-13
+
+### Fixed
+
+- Pinned GitHub Actions to the repository's .NET SDK 10.0.302 so locked
+  single-file publish dependencies remain reproducible instead of rolling to a
+  newer feature band during release packaging.
+
 ## [1.1.0] - 2026-08-13
 
 ### Added
