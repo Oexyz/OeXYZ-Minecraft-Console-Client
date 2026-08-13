@@ -8,4 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\fixtures\*.json" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

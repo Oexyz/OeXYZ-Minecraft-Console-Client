@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>OeXYZ.Authentication</AssemblyName>
+    <RootNamespace>OeXYZ.Authentication</RootNamespace>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
+    <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+    <ProjectReference Include="..\OeXYZ.Session\OeXYZ.Session.csproj" />
+    <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+</Project>

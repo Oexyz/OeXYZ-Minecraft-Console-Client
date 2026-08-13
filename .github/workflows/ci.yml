@@ -34,7 +34,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run generate:protocol
-          git diff --exit-code -- src/OeXYZ.Protocol/Resources/protocol-catalog.json
+          git diff --exit-code -- src/OeXYZ.Protocol/Resources/protocol-catalog.json src/OeXYZ.Protocol/Resources/en-us.json
 
       - name: Restore locked dependencies
         run: dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
@@ -51,21 +51,55 @@ jobs:
       - name: Run deterministic updater tests
         run: dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
 
-      - name: Verify self-contained publish
+      - name: Run deterministic session and redaction tests
+        run: dotnet run --project tests/OeXYZ.Session.Tests -c Release --no-build
+
+      - name: Write protocol compatibility report
         shell: pwsh
         run: |
-          dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
-            -c Release -r win-x64 --self-contained true --no-restore `
-            -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" `
-            -o artifacts/publish
-          if (-not (Test-Path 'artifacts/publish/OeXYZ Console Client.exe')) {
-            throw 'Published application executable was not produced.'
+          $catalog = Get-Content src/OeXYZ.Protocol/Resources/protocol-catalog.json -Raw | ConvertFrom-Json
+          $required = @('keep_alive','kick_disconnect','position','update_health')
+          $rows = foreach ($version in $catalog.versions) {
+            $play = $version.packetIds.playClientbound
+            $names = @($play.PSObject.Properties.Name)
+            $missing = @($required | Where-Object { $_ -notin $names })
+            [pscustomobject]@{ Minecraft=$version.minecraftVersion; Protocol=$version.protocolVersion; Missing=($missing -join ', ') }
+          }
+          $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath protocol-compatibility.txt
+          if ($rows[-1].Missing) { throw "Newest protocol lacks critical mappings: $($rows[-1].Missing)" }
+          $newest = $catalog.versions[-1].packetIds
+          if ('ping' -notin @($newest.playClientbound.PSObject.Properties.Name) -or
+              'pong' -notin @($newest.playServerbound.PSObject.Properties.Name)) {
+            throw 'Newest protocol lacks the play ping/pong pair required by modern proxies.'
+          }
+
+      - name: Verify x64 and ARM64 self-contained single-file publishes
+        shell: pwsh
+        run: |
+          foreach ($runtime in @('win-x64','win-arm64')) {
+            $gui = "artifacts/$runtime/gui"
+            $cli = "artifacts/$runtime/cli"
+            dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
+              -c Release -r $runtime --self-contained true `
+              -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $gui
+            dotnet publish src/OeXYZ.Cli/OeXYZ.Cli.csproj `
+              -c Release -r $runtime --self-contained true `
+              -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $cli
+            if (-not (Test-Path "$gui/OeXYZ Console Client.exe") -or -not (Test-Path "$cli/oexyz.exe")) {
+              throw "Single-file output missing for $runtime."
+            }
+            if (@(Get-ChildItem $gui -File).Count -ne 1 -or @(Get-ChildItem $cli -File).Count -ne 1) {
+              throw "Publish for $runtime was not one executable per frontend."
+            }
           }
 
       - name: Upload CI publish
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: OeXYZ-Console-Client-win-x64-ci
-          path: artifacts/publish/
+          name: OeXYZ-Minecraft-Console-Client-windows-ci
+          path: |
+            artifacts/win-x64/
+            artifacts/win-arm64/
+            protocol-compatibility.txt
           if-no-files-found: error
           retention-days: 7

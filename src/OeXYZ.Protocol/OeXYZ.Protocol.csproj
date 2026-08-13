@@ -3,9 +3,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>OeXYZ.Protocol</AssemblyName>
     <RootNamespace>OeXYZ.Protocol</RootNamespace>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
     <EmbeddedResource Include="Resources\protocol-catalog.json" />
+    <EmbeddedResource Include="Resources\en-us.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OeXYZ.Protocol.Tests" />
   </ItemGroup>
 </Project>

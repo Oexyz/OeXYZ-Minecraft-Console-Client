@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "oexyz.core": {
+        "type": "Project"
+      },
+      "oexyz.protocol": {
+        "type": "Project",
+        "dependencies": {
+          "OeXYZ.Core": "[1.0.0, )"
+        }
+      },
+      "oexyz.session": {
+        "type": "Project",
+        "dependencies": {
+          "OeXYZ.Core": "[1.0.0, )",
+          "OeXYZ.Protocol": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}

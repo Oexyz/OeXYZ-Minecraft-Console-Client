@@ -6,6 +6,7 @@ namespace OeXYZ.ConsoleClient;
 
 internal static class Theme
 {
+    private static readonly ToolStripProfessionalRenderer MenuRenderer = new(new DarkColorTable());
     public static readonly Color Background = Color.FromArgb(7, 10, 15);
     public static readonly Color Sidebar = Color.FromArgb(11, 15, 22);
     public static readonly Color Surface = Color.FromArgb(16, 22, 32);
@@ -21,8 +22,8 @@ internal static class Theme
     public static readonly Color Danger = Color.FromArgb(255, 95, 86);
     public static readonly Color Dark = Color.FromArgb(5, 8, 13);
     public static readonly Color DarkSurface = Color.FromArgb(13, 18, 27);
-    public static readonly Font Body = new("Segoe UI", 9F);
-    public static readonly Font Wordmark = new("Bahnschrift SemiBold", 23F, FontStyle.Bold);
+    public static readonly Font Body = AppFonts.Create(9F);
+    public static readonly Font Wordmark = AppFonts.Create(23F, FontStyle.Bold);
 
     public static Button Button(string text, int width)
     {
@@ -50,16 +51,27 @@ internal static class Theme
         button.FlatAppearance.BorderColor = Blue;
         button.FlatAppearance.MouseOverBackColor = BlueBright;
         button.FlatAppearance.MouseDownBackColor = Color.FromArgb(6, 92, 176);
-        button.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        button.Font = AppFonts.Create(9F, FontStyle.Bold);
     }
 
     public static Label Heading(string text, float size) => new()
     {
         Text = text,
         AutoSize = true,
+        UseMnemonic = false,
         ForeColor = Ink,
-        Font = new Font("Segoe UI", size, FontStyle.Bold)
+        Font = AppFonts.Create(size, FontStyle.Bold)
     };
+
+    public static void Menu(ContextMenuStrip menu) => ToolStrip(menu);
+
+    public static void ToolStrip(ToolStrip strip)
+    {
+        strip.BackColor = Surface;
+        strip.ForeColor = Ink;
+        strip.Font = Body;
+        strip.Renderer = MenuRenderer;
+    }
 
     public static void Input(Control control)
     {
@@ -84,6 +96,28 @@ internal static class Theme
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
+
+    private sealed class DarkColorTable : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Surface;
+        public override Color ImageMarginGradientBegin => Surface;
+        public override Color ImageMarginGradientMiddle => Surface;
+        public override Color ImageMarginGradientEnd => Surface;
+        public override Color MenuBorder => Border;
+        public override Color MenuItemBorder => Blue;
+        public override Color MenuItemSelected => Tint;
+        public override Color MenuItemSelectedGradientBegin => Tint;
+        public override Color MenuItemSelectedGradientEnd => Tint;
+        public override Color MenuItemPressedGradientBegin => Raised;
+        public override Color MenuItemPressedGradientMiddle => Raised;
+        public override Color MenuItemPressedGradientEnd => Raised;
+        public override Color SeparatorDark => Border;
+        public override Color SeparatorLight => Border;
+        public override Color ToolStripBorder => Border;
+        public override Color ToolStripGradientBegin => Surface;
+        public override Color ToolStripGradientMiddle => Surface;
+        public override Color ToolStripGradientEnd => Surface;
+    }
 }
 
 internal sealed class LogoControl : Control
@@ -212,6 +246,9 @@ internal sealed class BrandTabControl : TabControl
 
 internal sealed class BrandListView : ListView
 {
+    private bool fitLastColumn;
+    private bool fittingColumn;
+
     public BrandListView()
     {
         OwnerDraw = true;
@@ -221,10 +258,83 @@ internal sealed class BrandListView : ListView
         ForeColor = Theme.Ink;
     }
 
+    [System.ComponentModel.DefaultValue(false)]
+    public bool FitLastColumn
+    {
+        get => fitLastColumn;
+        set
+        {
+            fitLastColumn = value;
+            FitTrailingColumn();
+        }
+    }
+
     protected override void OnHandleCreated(EventArgs eventArgs)
     {
         base.OnHandleCreated(eventArgs);
         try { SetWindowTheme(Handle, "DarkMode_Explorer", null); } catch { }
+        QueueTrailingColumnFit();
+    }
+
+    protected override void OnResize(EventArgs eventArgs)
+    {
+        base.OnResize(eventArgs);
+        FitTrailingColumn();
+    }
+
+    protected override void OnLayout(LayoutEventArgs eventArgs)
+    {
+        base.OnLayout(eventArgs);
+        FitTrailingColumn();
+    }
+
+    protected override void OnVisibleChanged(EventArgs eventArgs)
+    {
+        base.OnVisibleChanged(eventArgs);
+        if (Visible) QueueTrailingColumnFit();
+    }
+
+    protected override void OnFontChanged(EventArgs eventArgs)
+    {
+        base.OnFontChanged(eventArgs);
+        QueueTrailingColumnFit();
+    }
+
+    protected override void OnColumnWidthChanged(ColumnWidthChangedEventArgs eventArgs)
+    {
+        base.OnColumnWidthChanged(eventArgs);
+        if (!fittingColumn) QueueTrailingColumnFit();
+    }
+
+    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    {
+        base.OnDpiChangedAfterParent(eventArgs);
+        try { SetWindowTheme(Handle, "DarkMode_Explorer", null); } catch { }
+        QueueTrailingColumnFit();
+    }
+
+    private void QueueTrailingColumnFit()
+    {
+        if (!fitLastColumn || !IsHandleCreated || IsDisposed || Disposing) return;
+        BeginInvoke(() =>
+        {
+            if (!IsDisposed && !Disposing) FitTrailingColumn();
+        });
+    }
+
+    public void FitTrailingColumn()
+    {
+        if (!fitLastColumn || fittingColumn || Columns.Count == 0 || ClientSize.Width <= 0) return;
+        fittingColumn = true;
+        try
+        {
+            int occupied = Columns.Cast<ColumnHeader>().Take(Columns.Count - 1).Sum(column => column.Width);
+            int target = Math.Max(48, ClientSize.Width - occupied - 1);
+            ColumnHeader trailing = Columns[Columns.Count - 1];
+            if (trailing.Width != target) trailing.Width = target;
+            Invalidate();
+        }
+        finally { fittingColumn = false; }
     }
 
     protected override void OnDrawColumnHeader(DrawListViewColumnHeaderEventArgs eventArgs)

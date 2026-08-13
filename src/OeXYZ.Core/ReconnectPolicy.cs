@@ -9,13 +9,22 @@ public enum DisconnectCategory
     User
 }
 
-public sealed record DisconnectDecision(DisconnectCategory Category, string Summary)
+public sealed record DisconnectDecision(
+    DisconnectCategory Category,
+    string Summary,
+    TimeSpan? MinimumRetryDelay = null)
 {
     public bool MayReconnect => Category == DisconnectCategory.Transient;
 }
 
 public static class DisconnectClassifier
 {
+    private static readonly string[] ThrottleMarkers =
+    [
+        "please wait before reconnecting", "too many connections", "connection throttled",
+        "reconnecting too fast", "reconnect too fast"
+    ];
+
     private static readonly string[] PermanentMarkers =
     [
         "banned", "ban ", "whitelist", "not whitelisted", "invalid session", "failed to verify username",
@@ -41,6 +50,9 @@ public static class DisconnectClassifier
 
         if (PermanentMarkers.Any(marker => normalized.Contains(marker, StringComparison.Ordinal)))
             return new DisconnectDecision(DisconnectCategory.Permanent, message);
+
+        if (ThrottleMarkers.Any(marker => normalized.Contains(marker, StringComparison.Ordinal)))
+            return new DisconnectDecision(DisconnectCategory.Transient, message, TimeSpan.FromSeconds(60));
 
         if (source is SocketException or TimeoutException or OperationCanceledException ||
             TransientMarkers.Any(marker => normalized.Contains(marker, StringComparison.Ordinal)))

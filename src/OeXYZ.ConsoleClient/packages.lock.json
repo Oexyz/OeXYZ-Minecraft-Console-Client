@@ -2,21 +2,20 @@
   "version": 1,
   "dependencies": {
     "net10.0-windows7.0": {
-      "CmlLib.Core.Auth.Microsoft": {
+      "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[3.3.1, )",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "f5VCIE7AJpd5YvzNTeMGVzQIgyE9tX+AreTYwQF+REbu+DZo/2Ae+jNSwhPEYrVz6RRkd7y8ubXjk6Nn6Ka+Cg=="
+      },
+      "CmlLib.Core.Auth.Microsoft": {
+        "type": "Transitive",
         "resolved": "3.3.1",
         "contentHash": "olPXBRd9SqwyQKxE7FyqfK/zIrlG88WUgk4F1ubvrhLoZQn0xi3nmzUwM/dYWSObt0JnJSyjy+wqwG7heYtqYA==",
         "dependencies": {
           "CmlLib.Core.Commons": "4.0.0",
           "XboxAuthNet.Game": "1.4.1"
         }
-      },
-      "Microsoft.NET.ILLink.Tasks": {
-        "type": "Direct",
-        "requested": "[10.0.10, )",
-        "resolved": "10.0.10",
-        "contentHash": "f5VCIE7AJpd5YvzNTeMGVzQIgyE9tX+AreTYwQF+REbu+DZo/2Ae+jNSwhPEYrVz6RRkd7y8ubXjk6Nn6Ka+Cg=="
       },
       "CmlLib.Core.Commons": {
         "type": "Transitive",
@@ -58,6 +57,15 @@
           "XboxAuthNet": "3.0.4"
         }
       },
+      "oexyz.authentication": {
+        "type": "Project",
+        "dependencies": {
+          "CmlLib.Core.Auth.Microsoft": "[3.3.1, )",
+          "OeXYZ.Core": "[1.0.0, )",
+          "OeXYZ.Protocol": "[1.0.0, )",
+          "OeXYZ.Session": "[1.0.0, )"
+        }
+      },
       "oexyz.core": {
         "type": "Project"
       },
@@ -67,8 +75,22 @@
           "OeXYZ.Core": "[1.0.0, )"
         }
       },
+      "oexyz.session": {
+        "type": "Project",
+        "dependencies": {
+          "OeXYZ.Core": "[1.0.0, )",
+          "OeXYZ.Protocol": "[1.0.0, )"
+        }
+      },
       "oexyz.updater": {
         "type": "Project"
+      }
+    },
+    "net10.0-windows7.0/win-arm64": {
+      "Microsoft.Web.WebView2": {
+        "type": "Transitive",
+        "resolved": "1.0.1823.32",
+        "contentHash": "ppRcWBUNggFIqyJp7PfgS4Oe8/7yli/mHcTNDOaqo3ZzJWnv9AOr0WE9ceEP5SPs1M7CQ3QvdGMR7KNz0v09EA=="
       }
     },
     "net10.0-windows7.0/win-x64": {

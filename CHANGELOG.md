@@ -5,6 +5,71 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-14
+
+### Added
+
+- Native `oexyz.exe` headless frontend with list/status/run/group commands,
+  stdin chat, Ctrl+C shutdown, documented exit codes, optional sanitized file
+  logging, explicit config paths, and reversible user-PATH setup.
+- Shared platform-neutral session project used by both GUI and CLI, plus a
+  separate authentication adapter and cross-platform-ready application paths.
+- Session groups, opt-in session restore, profile quick commands, bounded and
+  opt-in startup commands, searchable log viewer, retention policy, sanitized
+  support packages, metadata-only packet inspector, and unknown-packet counts.
+- Anonymized protocol replays for 1.8.8 through 26.2 and malformed-input tests
+  for framing, UTF-8, NBT, compression, encrypted EOF, fragmentation,
+  unexpected packets, duplicates, and invalid states.
+- Native self-contained, single-file GUI and CLI release builds for Windows x64
+  and Windows ARM64, with a generated protocol-compatibility CI report.
+- Locally embedded Inter variable fonts for consistent GUI typography without
+  installing fonts on the user's system.
+- A deterministic 300 MB total log cap that deletes oldest closed logs while
+  protecting files still owned by active sessions.
+- Session log queues are bounded to prevent unbounded memory growth if storage
+  stalls during an extreme message burst.
+
+### Changed
+
+- Profile format 3 keeps previous unknown fields while adding inspector and
+  restore preferences; every migration/save preserves a backup.
+- The updater chooses an architecture-matched release, verifies SHA-256, bounds
+  extraction, rejects ZIP traversal, stages both executables, retains rollback
+  copies, and restarts only after explicit confirmation.
+- Strict UTF-8 decoding and bounded incremental decompression harden untrusted
+  network input; packet tracing incurs no unknown-statistics work unless opted in.
+- Minecraft AES-CFB8 now uses an immediate-write stateful stream instead of a
+  block-buffering generic `CryptoStream`, preventing short encrypted login and
+  Configuration packets from waiting until the server timeout.
+- Modern NBT chat now supports Java modified UTF-8/CESU-8, proxy-generated
+  unnamed text components, styled runs and literal translation patterns.
+- The embedded English Minecraft catalog resolves entity, death, advancement
+  and command keys instead of displaying raw values such as
+  `entity.minecraft.slime`.
+- Windows-native dark controls, menus, scrollbars, and branded message dialogs
+  now use the embedded Inter family consistently at DPI-scaled sizes.
+
+### Fixed
+
+- Modern play-state `ping` packets receive the required integer `pong`, keeping
+  Velocity sessions alive beyond their previous roughly 60-second timeout.
+- Session actions remain fully visible after resizing and DPI scaling; real UI
+  automation verifies Respawn, Disconnect, Log, More, and Close.
+- The Log Viewer reads logs that an active session still has open and preserves
+  its usable split layout at non-default DPI.
+- Settings, profile editors, Accounts/Servers lists, context menus, Player List,
+  and protocol-inspector layouts no longer expose white gaps or clipped rows.
+- `/respawn` and `/disconnect` are handled as local session actions in the
+  headless CLI instead of being forwarded as unknown Minecraft commands.
+
+### Security
+
+- Central redaction now covers bearer/JSON/key-value credentials and full
+  login/register/password command lines in GUI logs, CLI logs, crash output,
+  and support packages.
+- Sensitive authentication commands are blocked from startup automation and
+  are never included in command history.
+
 ## [1.1.1] - 2026-08-13
 
 ### Fixed

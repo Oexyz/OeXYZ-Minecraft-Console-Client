@@ -31,7 +31,9 @@ public static partial class SensitiveDataRedactor
     {
         if (string.IsNullOrEmpty(value)) return value;
         string result = BearerTokenRegex().Replace(value, "$1[REDACTED]");
-        return JsonTokenRegex().Replace(result, "$1[REDACTED]$3");
+        result = JsonTokenRegex().Replace(result, "$1[REDACTED]$3");
+        result = KeyValueSecretRegex().Replace(result, "$1[REDACTED]");
+        return SensitiveCommandLineRegex().Replace(result, "$1 [REDACTED]");
     }
 
     [GeneratedRegex("(?i)(Bearer\\s+)[A-Za-z0-9._~+/=-]{16,}", RegexOptions.CultureInvariant)]
@@ -39,4 +41,10 @@ public static partial class SensitiveDataRedactor
 
     [GeneratedRegex("(?i)(\\\"(?:access_token|refresh_token|token)\\\"\\s*:\\s*\\\")([^\\\"]+)(\\\")", RegexOptions.CultureInvariant)]
     private static partial Regex JsonTokenRegex();
+
+    [GeneratedRegex("(?i)((?:access[_-]?token|refresh[_-]?token|password|client[_-]?secret)\\s*[=:]\\s*)[^\\s,;&]+", RegexOptions.CultureInvariant)]
+    private static partial Regex KeyValueSecretRegex();
+
+    [GeneratedRegex("(?im)(/(?:login|log|l|register|reg|changepassword|password|passwd)\\b)[^\\r\\n]*", RegexOptions.CultureInvariant)]
+    private static partial Regex SensitiveCommandLineRegex();
 }

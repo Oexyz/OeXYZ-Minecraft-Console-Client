@@ -1,6 +1,9 @@
 using OeXYZ.Protocol;
 using System.Net;
 using System.Net.Sockets;
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
 
 List<string> passed = [];
 
@@ -23,6 +26,8 @@ Run("required packet maps", () =>
     True(latest.PacketIds.ConfigurationServerbound.ContainsKey("custom_payload"), "Configuration brand channel is missing.");
     True(latest.PacketIds.ConfigurationClientbound.ContainsKey("code_of_conduct"), "Code-of-conduct packet is missing.");
     True(latest.PacketIds.ConfigurationServerbound.ContainsKey("accept_code_of_conduct"), "Code-of-conduct response is missing.");
+    True(latest.PacketIds.PlayClientbound.ContainsKey("ping"), "Current play ping packet is missing.");
+    True(latest.PacketIds.PlayServerbound.ContainsKey("pong"), "Current play pong response is missing.");
     True(legacy.PacketIds.PlayClientbound.ContainsKey("player_info"), "Legacy player-list packet is missing.");
     True(latest.PacketIds.PlayClientbound.ContainsKey("player_info") || latest.PacketIds.PlayClientbound.ContainsKey("player_info_update"), "Current player-list packet is missing.");
 });
@@ -82,9 +87,137 @@ Run("chat formatting preserves styles without click actions", () =>
     True(legacy.Runs.Any(run => run.Style.Underlined), "Legacy underline was not parsed.");
 });
 
+Run("current NBT chat supports literal translations and modified UTF-8", () =>
+{
+    Equal("Slime", ChatTextCodec.ParseJson("{\"translate\":\"entity.minecraft.slime\"}").Text);
+    Equal("OeXYZTest was slain by Slime", ChatTextCodec.ParseJson(
+        "{\"translate\":\"death.attack.mob\",\"with\":[\"OeXYZTest\",{\"translate\":\"entity.minecraft.slime\"}]}").Text);
+    Equal("Successfully filled 121 block(s)", ChatTextCodec.ParseJson(
+        "{\"translate\":\"commands.fill.success\",\"with\":[121]}").Text);
+
+    byte[] proxyComponent = Convert.FromHexString(
+        "0A090004776974680A0000000109000565787472610A0000000208000474657874000B" +
+        "5465737455736572203E2000080000001868656C6C6F2066726F6D20612032362E3220" +
+        "73657276657200080004746578740000000800097472616E736C6174650002257300");
+    PacketReader proxyReader = new(proxyComponent);
+    Equal("TestUser > hello from a 26.2 server", ChatTextCodec.FromAnonymousNbt(ref proxyReader));
+    Equal(0, proxyReader.Remaining);
+
+    // Java modified UTF-8 encodes U+1F600 as the CESU-8 surrogate pair below.
+    byte[] supplementaryText = Convert.FromHexString(
+        "0A080004746578740006EDA0BDEDB88000");
+    PacketReader supplementaryReader = new(supplementaryText);
+    Equal("😀", ChatTextCodec.FromAnonymousNbt(ref supplementaryReader));
+    Equal(0, supplementaryReader.Remaining);
+
+    FormattedChatText literal = ChatTextCodec.ParseJson(
+        "{\"translate\":\"[%1$s] %2$s %%\",\"with\":[\"Alex\",\"hello\"]}");
+    Equal("[Alex] hello %", literal.Text);
+
+    byte[] styledComponent = Convert.FromHexString(
+        "0A09000565787472610A00000002080005636F6C6F720003726564010004626F6C64010800047465787400045265642000" +
+        "0100066974616C69630101000A756E6465726C696E65640101000D737472696B657468726F756768010A000B636C69636B" +
+        "5F6576656E74080006616374696F6E000B72756E5F636F6D6D616E64080007636F6D6D616E6400062F6F70206D650008" +
+        "00047465787400067374796C65640008000474657874000000");
+    PacketReader styledReader = new(styledComponent);
+    FormattedChatText styled = ChatTextCodec.ParseAnonymousNbt(ref styledReader);
+    Equal("Red styled", styled.Text);
+    True(styled.Runs.Any(run => run.Text == "Red " && run.Style.Color == "red" && run.Style.Bold),
+        "NBT color or bold formatting was lost.");
+    True(styled.Runs.Any(run => run.Text == "styled" && run.Style.Italic && run.Style.Underlined && run.Style.Strikethrough),
+        "NBT text decorations were lost.");
+    True(styled.Text.IndexOf("/op me", StringComparison.Ordinal) < 0,
+        "An NBT click command leaked into rendered text.");
+});
+
+Run("player chat supports native and proxy-forwarded layouts", () =>
+{
+    Guid sender = Guid.Parse("52fdfc07-2182-454f-963f-5f0f9a621d72");
+    PacketWriter current = new();
+    current.WriteVarInt(42);
+    current.WriteUuid(sender);
+    current.WriteVarInt(0);
+    current.WriteBoolean(false);
+    current.WriteString("hello from current");
+    Equal("<Steve> hello from current",
+        PlayerChatDecoder.Decode(current.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
+
+    PacketWriter forwardedLegacy = new();
+    forwardedLegacy.WriteUuid(sender);
+    forwardedLegacy.WriteVarInt(0);
+    forwardedLegacy.WriteBoolean(false);
+    forwardedLegacy.WriteString("hello through proxy");
+    Equal("<Steve> hello through proxy",
+        PlayerChatDecoder.Decode(forwardedLegacy.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
+
+    PacketWriter unsigned = new();
+    unsigned.WriteVarInt(43);
+    unsigned.WriteUuid(sender);
+    unsigned.WriteVarInt(1);
+    unsigned.WriteBoolean(false);
+    unsigned.WriteString("<Steve>");
+    unsigned.WriteLong(0);
+    unsigned.WriteLong(0);
+    unsigned.WriteVarInt(0);
+    unsigned.WriteBoolean(true);
+    byte[] unsignedText = Encoding.UTF8.GetBytes("<Steve> visible unsigned content");
+    unsigned.WriteByte(8);
+    unsigned.WriteUnsignedShort((ushort)unsignedText.Length);
+    unsigned.WriteBytes(unsignedText);
+    Equal("<Steve> visible unsigned content",
+        PlayerChatDecoder.Decode(unsigned.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
+});
+
 Run("connected socket disconnect completes", () =>
 {
     VerifyConnectedDisconnectAsync().GetAwaiter().GetResult();
+});
+
+Run("invalid protocol state transitions are rejected", () =>
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8.8");
+    MinecraftConnection connection = new("127.0.0.1", 25565, "StateTest", protocol);
+    try
+    {
+        Throws<InvalidOperationException>(() => connection.SendChatAsync("too early").GetAwaiter().GetResult());
+        Throws<InvalidOperationException>(() => connection.RespawnAsync().GetAwaiter().GetResult());
+    }
+    finally { connection.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+});
+
+Run("malformed primitives fail within protocol limits", () =>
+{
+    Throws<InvalidDataException>(() => { PacketReader reader = new(new byte[] { 0x80, 0x80, 0x80, 0x80, 0x80 }); _ = reader.ReadVarInt(); });
+    Throws<EndOfStreamException>(() => { PacketReader reader = new(new byte[] { 0, 1, 2 }); _ = reader.ReadUuid(); });
+    Throws<InvalidDataException>(() => { PacketReader reader = new(new byte[] { 2, 0xC3, 0x28 }); _ = reader.ReadString(); });
+    PacketReader malformedNbt = new(new byte[] { 99 });
+    Equal("[Unreadable server message]", ChatTextCodec.FromAnonymousNbt(ref malformedNbt));
+    byte[] deepNbt = new byte[] { 10 }.Concat(Enumerable.Repeat(new byte[] { 10, 0, 0 }, 66).SelectMany(value => value))
+        .Concat(Enumerable.Repeat((byte)0, 66)).ToArray();
+    PacketReader deepReader = new(deepNbt);
+    Equal("[Unreadable server message]", ChatTextCodec.FromAnonymousNbt(ref deepReader));
+    FormattedChatText malformed = ChatTextCodec.ParseJson("{not-json");
+    Equal("{not-json", malformed.Text);
+});
+
+Run("framing rejects invalid lengths truncation and compression bombs", () =>
+{
+    VerifyFramingGuardsAsync().GetAwaiter().GetResult();
+});
+
+Run("fragmented one-byte transport is reassembled", () =>
+{
+    VerifyFragmentedFrameAsync().GetAwaiter().GetResult();
+});
+
+Run("AES-CFB8 short packets flush immediately and round trip", () =>
+{
+    VerifyCfb8StreamAsync().GetAwaiter().GetResult();
+});
+
+Run("anonymized protocol replays cover legacy through current", () =>
+{
+    VerifyReplayFixturesAsync().GetAwaiter().GetResult();
 });
 
 Console.WriteLine($"PASS: {passed.Count} protocol tests");
@@ -153,6 +286,8 @@ static async Task VerifyConnectedDisconnectAsync()
         playerInfoFrame.WriteVarInt(playerInfoBody.Length);
         playerInfoFrame.WriteBytes(playerInfoBody);
         await stream.WriteAsync(playerInfoFrame.ToArray(), timeout.Token);
+        await stream.WriteAsync(playerInfoFrame.ToArray(), timeout.Token);
+        await stream.WriteAsync(new byte[] { 1, 0x7F }, timeout.Token);
         await stream.FlushAsync(timeout.Token);
         await releaseServer.Task.WaitAsync(timeout.Token);
     }, timeout.Token);
@@ -160,7 +295,10 @@ static async Task VerifyConnectedDisconnectAsync()
     try
     {
         ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8");
-        await using MinecraftConnection connection = new("127.0.0.1", (ushort)port, "DisconnectTest", protocol);
+        await using MinecraftConnection connection = new("127.0.0.1", (ushort)port, "DisconnectTest", protocol)
+        {
+            PacketInspectionEnabled = true
+        };
         await connection.ConnectAsync(timeout.Token);
         Equal(ConnectionState.Play, connection.State);
         await WaitUntilAsync(() => connection.Players.Count == 1, TimeSpan.FromSeconds(2));
@@ -171,6 +309,8 @@ static async Task VerifyConnectedDisconnectAsync()
         True(connection.Metrics.PacketsSent >= 3, "Sent packet metrics were not incremented.");
         True(connection.Metrics.BytesReceived > 0 && connection.Metrics.BytesSent > 0, "Wire-byte metrics were not incremented.");
         True(connection.Metrics.LastReceivedAt is not null, "Last receive activity was not recorded.");
+        True(connection.UnknownPacketStatistics.Any(item => item.Key.EndsWith("0x7F", StringComparison.Ordinal) && item.Value == 1),
+            "The unexpected play packet was not recorded exactly once.");
 
         connection.Disconnect();
         connection.Disconnect();
@@ -193,4 +333,122 @@ static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
         if (DateTimeOffset.UtcNow >= deadline) throw new TimeoutException("The test condition was not reached.");
         await Task.Delay(10);
     }
+}
+
+static async Task VerifyFramingGuardsAsync()
+{
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(new byte[] { 0x80, 0x80, 0x80, 0x80, 0x80 }));
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x0F }));
+    PacketWriter hugeLength = new();
+    hugeLength.WriteVarInt(MinecraftPacketStream.MaximumPacketLength + 1);
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(hugeLength.ToArray()));
+    await ThrowsAsync<EndOfStreamException>(() => ReadPacketAsync(new byte[] { 2, 0 }));
+
+    byte[] expanding = Compress(Enumerable.Repeat((byte)0x41, 64).ToArray());
+    PacketWriter body = new();
+    body.WriteVarInt(1);
+    body.WriteBytes(expanding);
+    PacketWriter frame = new();
+    frame.WriteVarInt(body.Length);
+    frame.WriteBytes(body.ToArray());
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(frame.ToArray(), compressionThreshold: 1));
+
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(new byte[] { 2, 1, 0xFF }, compressionThreshold: 2));
+
+    await using MemoryStream encryptedSource = new();
+    await using MinecraftPacketStream encryptedPackets = new(encryptedSource);
+    encryptedPackets.EnableEncryption(new byte[16]);
+    await ThrowsAsync<EndOfStreamException>(async () => { _ = await encryptedPackets.ReadAsync(CancellationToken.None); });
+}
+
+static async Task VerifyFragmentedFrameAsync()
+{
+    await using OneByteReadStream stream = new(new byte[] { 3, 0x2A, 0x01, 0x02 });
+    await using MinecraftPacketStream packets = new(stream);
+    InboundPacket packet = await packets.ReadAsync(CancellationToken.None);
+    Equal(0x2A, packet.Id);
+    True(packet.Payload.AsSpan().SequenceEqual(new byte[] { 1, 2 }), "Fragmented payload changed.");
+}
+
+static async Task VerifyCfb8StreamAsync()
+{
+    byte[] key = Enumerable.Range(0, 16).Select(index => (byte)index).ToArray();
+    byte[] clear = [0x01, 0x02, 0x03];
+    await using MemoryStream transport = new();
+    await using (MinecraftCfb8Stream writer = new(transport, key, decrypt: false))
+    {
+        await writer.WriteAsync(clear);
+        await writer.FlushAsync();
+        Equal((long)clear.Length, transport.Length);
+    }
+    byte[] cipher = transport.ToArray();
+    True(!cipher.AsSpan().SequenceEqual(clear), "Encrypted bytes equal plaintext.");
+    await using MemoryStream input = new(cipher, writable: false);
+    await using MinecraftCfb8Stream reader = new(input, key, decrypt: true);
+    byte[] decoded = new byte[clear.Length];
+    await reader.ReadExactlyAsync(decoded);
+    True(decoded.AsSpan().SequenceEqual(clear), "CFB8 round trip changed a short packet.");
+}
+
+static async Task VerifyReplayFixturesAsync()
+{
+    string directory = Path.Combine(AppContext.BaseDirectory, "fixtures");
+    string[] files = Directory.GetFiles(directory, "*.json").Order().ToArray();
+    True(files.Length >= 6, "Expected replay fixtures for legacy and current versions.");
+    ProtocolCatalog catalog = ProtocolCatalog.LoadEmbedded();
+    foreach (string path in files)
+    {
+        ReplayFixture fixture = JsonSerializer.Deserialize<ReplayFixture>(await File.ReadAllTextAsync(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Equal(fixture.ProtocolVersion, catalog.Resolve(fixture.MinecraftVersion).ProtocolVersion);
+        foreach (string raw in fixture.Frames)
+        {
+            InboundPacket packet = await ReadPacketAsync(Convert.FromHexString(raw));
+            True(packet.Id >= 0, $"Fixture {Path.GetFileName(path)} contains an invalid packet ID.");
+        }
+    }
+}
+
+static async Task<InboundPacket> ReadPacketAsync(byte[] bytes, int? compressionThreshold = null)
+{
+    await using MemoryStream stream = new(bytes, writable: false);
+    await using MinecraftPacketStream packets = new(stream);
+    if (compressionThreshold.HasValue) packets.EnableCompression(compressionThreshold.Value);
+    return await packets.ReadAsync(CancellationToken.None);
+}
+
+static byte[] Compress(byte[] bytes)
+{
+    using MemoryStream output = new();
+    using (ZLibStream zlib = new(output, CompressionLevel.Fastest, leaveOpen: true)) zlib.Write(bytes);
+    return output.ToArray();
+}
+
+static async Task ThrowsAsync<TException>(Func<Task> action) where TException : Exception
+{
+    try { await action(); }
+    catch (TException) { return; }
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+sealed record ReplayFixture(string MinecraftVersion, int ProtocolVersion, List<string> Frames);
+
+sealed class OneByteReadStream : Stream
+{
+    private readonly MemoryStream inner;
+    public OneByteReadStream(byte[] bytes) => inner = new MemoryStream(bytes, writable: false);
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => inner.Length;
+    public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, Math.Min(count, 1));
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        inner.ReadAsync(buffer[..Math.Min(buffer.Length, 1)], cancellationToken);
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    protected override void Dispose(bool disposing) { if (disposing) inner.Dispose(); base.Dispose(disposing); }
+    public override ValueTask DisposeAsync() { inner.Dispose(); return ValueTask.CompletedTask; }
 }

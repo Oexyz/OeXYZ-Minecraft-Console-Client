@@ -9,7 +9,7 @@ internal sealed class UpdateDialog : Form
     private readonly Label message = new();
     private readonly Label versions = new();
     private readonly ProgressBar progress = new();
-    private readonly Button download = Theme.Button("Download verified update", 190);
+    private readonly Button download = Theme.Button("Download & install", 190);
     private readonly Button releasePage = Theme.Button("Open release page", 150);
     private readonly Button close = Theme.Button("Close", 90);
     private readonly CancellationTokenSource lifetime = new();
@@ -27,17 +27,18 @@ internal sealed class UpdateDialog : Form
         BackColor = Theme.Background;
         ForeColor = Theme.Ink;
         Font = Theme.Body;
+        AutoScaleMode = AutoScaleMode.Dpi;
 
         heading.Location = new Point(24, 22);
         heading.Size = new Size(510, 34);
         message.Location = new Point(24, 70);
         message.Size = new Size(510, 68);
         message.ForeColor = Color.FromArgb(198, 210, 225);
-        message.Font = new Font("Segoe UI", 10F);
+        message.Font = AppFonts.Create(10F);
         versions.Location = new Point(24, 142);
         versions.Size = new Size(510, 48);
         versions.ForeColor = Theme.Muted;
-        versions.Font = new Font("Consolas", 9F);
+        versions.Font = AppFonts.Create(9F);
         progress.Location = new Point(24, 204);
         progress.Size = new Size(512, 8);
         progress.Style = ProgressBarStyle.Marquee;
@@ -122,16 +123,11 @@ internal sealed class UpdateDialog : Form
     private async Task DownloadAsync()
     {
         if (result is null) return;
-        using SaveFileDialog save = new()
-        {
-            Title = "Save verified OeXYZ update",
-            FileName = result.AssetName,
-            Filter = "ZIP archive (*.zip)|*.zip",
-            AddExtension = true,
-            DefaultExt = "zip",
-            OverwritePrompt = true
-        };
-        if (save.ShowDialog(this) != DialogResult.OK) return;
+        if (BrandMessageBox.Show(this,
+                $"Download, verify and install OeXYZ {Display(result.LatestVersion)}?\n\n" +
+                "The app will close, keep a rollback backup, replace both architecture-matched executables and restart. Updates are never silent.",
+                "Confirm OeXYZ update", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
         CancellationToken cancellationToken = lifetime.Token;
         try
         {
@@ -141,12 +137,33 @@ internal sealed class UpdateDialog : Form
             progress.Visible = true;
             heading.Text = "Downloading and verifying";
             message.Text = "The archive is written to a temporary file until its SHA-256 checksum has been verified.";
-            await GitHubUpdateService.DownloadVerifiedAsync(result, save.FileName, cancellationToken);
+            string updateRoot = Path.Combine(AppPaths.Root, "updates", $"v{Display(result.LatestVersion)}");
+            string archive = Path.Combine(updateRoot, result.AssetName);
+            string stage = Path.Combine(updateRoot, "stage");
+            Directory.CreateDirectory(updateRoot);
+            await GitHubUpdateService.DownloadVerifiedAsync(result, archive, cancellationToken);
+            if (Directory.Exists(stage))
+                throw new IOException("A staged update already exists. Remove the updates folder and retry.");
+            UpdateInstaller.ExtractVerifiedArchive(archive, stage);
+            _ = UpdateInstaller.ValidateStage(stage);
             if (IsDisposed) return;
-            heading.Text = "Verified update downloaded";
+            heading.Text = "Verified update prepared";
             heading.ForeColor = Theme.Green;
-            message.Text = "Close OeXYZ, extract the ZIP and replace the previous application file.";
-            Process.Start(new ProcessStartInfo(Path.GetDirectoryName(save.FileName)!) { UseShellExecute = true });
+            message.Text = "OeXYZ will close, install the staged files with rollback protection, and restart.";
+            string helper = Path.Combine(Path.GetTempPath(), $"OeXYZ-UpdateHelper-{Guid.NewGuid():N}.exe");
+            File.Copy(Application.ExecutablePath, helper, overwrite: false);
+            Process.Start(new ProcessStartInfo(helper)
+            {
+                UseShellExecute = true,
+                ArgumentList =
+                {
+                    "--apply-update",
+                    Environment.ProcessId.ToString(),
+                    stage,
+                    AppContext.BaseDirectory
+                }
+            });
+            Application.Exit();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -84,3 +84,13 @@ const output = resolve(here, '../../src/OeXYZ.Protocol/Resources/protocol-catalo
 mkdirSync(dirname(output), { recursive: true })
 writeFileSync(output, JSON.stringify(catalog, null, 2) + '\n')
 console.log(`Generated ${versions.length} release mappings at ${output}`)
+
+// 26.2 reuses the 26.1 data schema in the pinned minecraft-data release.
+// The English catalog is embedded at runtime so translatable chat components
+// never expose raw keys such as entity.minecraft.slime to end users.
+const languageSchemaVersion = '26.1'
+const language = minecraftData(languageSchemaVersion)?.language
+if (!language) throw new Error(`No language catalog is available for ${languageSchemaVersion}`)
+const languageOutput = resolve(here, '../../src/OeXYZ.Protocol/Resources/en-us.json')
+writeFileSync(languageOutput, JSON.stringify(language, null, 2) + '\n')
+console.log(`Generated ${Object.keys(language).length} English translations at ${languageOutput}`)

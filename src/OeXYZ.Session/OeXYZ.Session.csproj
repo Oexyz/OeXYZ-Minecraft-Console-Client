@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>OeXYZ.Session</AssemblyName>
+    <RootNamespace>OeXYZ.Session</RootNamespace>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
+    <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+  </ItemGroup>
+</Project>

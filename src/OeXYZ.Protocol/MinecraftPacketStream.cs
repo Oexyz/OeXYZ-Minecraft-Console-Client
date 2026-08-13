@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 
 namespace OeXYZ.Protocol;
 
@@ -33,10 +32,8 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
         if (sharedSecret.Length != 16) throw new ArgumentException("Minecraft shared secrets are 16 bytes.", nameof(sharedSecret));
         if (!ReferenceEquals(readStream, stream)) throw new InvalidOperationException("Encryption is already enabled.");
 
-        Aes readAes = CreateCipher(sharedSecret);
-        Aes writeAes = CreateCipher(sharedSecret);
-        readStream = new CryptoStream(stream, readAes.CreateDecryptor(), CryptoStreamMode.Read, leaveOpen: true);
-        writeStream = new CryptoStream(stream, writeAes.CreateEncryptor(), CryptoStreamMode.Write, leaveOpen: true);
+        readStream = new MinecraftCfb8Stream(stream, sharedSecret, decrypt: true);
+        writeStream = new MinecraftCfb8Stream(stream, sharedSecret, decrypt: false);
     }
 
     public async ValueTask<InboundPacket> ReadAsync(CancellationToken cancellationToken)
@@ -65,7 +62,17 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
                 using MemoryStream input = new(body.ToArray(), writable: false);
                 using ZLibStream inflater = new(input, CompressionMode.Decompress);
                 using MemoryStream output = new(uncompressedLength);
-                await inflater.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+                byte[] buffer = new byte[16 * 1024];
+                while (output.Length < uncompressedLength)
+                {
+                    int remaining = checked(uncompressedLength - (int)output.Length);
+                    int requested = Math.Min(buffer.Length, remaining + 1);
+                    int read = await inflater.ReadAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                    if (read == 0) throw new InvalidDataException("Compressed packet ended before its declared size.");
+                    if (output.Length + read > uncompressedLength)
+                        throw new InvalidDataException("Compressed packet expands beyond its declared size.");
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
                 packetData = output.ToArray();
                 if (packetData.Length != uncompressedLength)
                     throw new InvalidDataException("Compressed packet size did not match its declaration.");
@@ -148,19 +155,13 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         writeLock.Dispose();
+        if (!ReferenceEquals(readStream, stream))
+            await readStream.DisposeAsync().ConfigureAwait(false);
+        if (!ReferenceEquals(writeStream, stream) && !ReferenceEquals(writeStream, readStream))
+            await writeStream.DisposeAsync().ConfigureAwait(false);
         await stream.DisposeAsync().ConfigureAwait(false);
     }
 
-    private static Aes CreateCipher(byte[] sharedSecret)
-    {
-        Aes aes = Aes.Create();
-        aes.Mode = CipherMode.CFB;
-        aes.FeedbackSize = 8;
-        aes.Padding = PaddingMode.None;
-        aes.Key = sharedSecret;
-        aes.IV = sharedSecret;
-        return aes;
-    }
 }
 
 internal sealed record InboundPacket(int Id, byte[] Payload, int WireLength);

@@ -3,5 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>OeXYZ.Updater</AssemblyName>
     <RootNamespace>OeXYZ.Updater</RootNamespace>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>

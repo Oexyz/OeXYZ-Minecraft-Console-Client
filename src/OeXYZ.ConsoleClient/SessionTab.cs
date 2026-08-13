@@ -1,5 +1,6 @@
 using OeXYZ.Core;
 using OeXYZ.Protocol;
+using OeXYZ.Session;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -24,6 +25,7 @@ internal sealed class SessionTab : TabPage
     private readonly Button disconnect = Theme.Button("Disconnect", 100);
     private readonly Button openLog = Theme.Button("Log", 62);
     private readonly Button close = Theme.Button("Close", 68);
+    private readonly Button more = Theme.Button("More", 70);
     private readonly Button playerToggle = Theme.Button("Players", 78);
     private readonly Label status = new();
     private readonly Label vitals = new();
@@ -72,7 +74,7 @@ internal sealed class SessionTab : TabPage
         send.Margin = new Padding(8, 0, 0, 0);
         Theme.Primary(send);
         input.Dock = DockStyle.Fill;
-        input.Font = new Font("Segoe UI", 11F);
+        input.Font = AppFonts.Create(11F);
         input.BackColor = Theme.Surface;
         input.ForeColor = Theme.Ink;
         input.BorderStyle = BorderStyle.FixedSingle;
@@ -112,17 +114,13 @@ internal sealed class SessionTab : TabPage
 
     private Control BuildHeader()
     {
-        TableLayoutPanel toolbar = new()
+        Panel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             BackColor = Theme.Surface
         };
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
         TableLayoutPanel dashboard = new()
         {
@@ -137,9 +135,9 @@ internal sealed class SessionTab : TabPage
         {
             label.Dock = DockStyle.Fill;
             label.AutoEllipsis = true;
-            label.Font = new Font("Cascadia Mono", 8.5F);
+            label.Font = AppFonts.Create(8.5F);
         }
-        status.Font = new Font("Cascadia Mono", 9F, FontStyle.Bold);
+        status.Font = AppFonts.Create(9F, FontStyle.Bold);
         status.ForeColor = Theme.BlueBright;
         vitals.ForeColor = Theme.Ink;
         traffic.ForeColor = Theme.Muted;
@@ -149,16 +147,15 @@ internal sealed class SessionTab : TabPage
 
         FlowLayoutPanel actions = new()
         {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Right,
+            Width = 450,
             FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
             Padding = new Padding(0, 18, 6, 0),
             Margin = Padding.Empty,
-            WrapContents = false,
             BackColor = Theme.Surface
         };
-        foreach (Button action in new[] { respawn, disconnect, openLog, close })
+        foreach (Button action in new[] { respawn, disconnect, openLog, more, close })
         {
             action.AutoSize = true;
             action.AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -166,8 +163,8 @@ internal sealed class SessionTab : TabPage
             action.Margin = new Padding(3, 0, 3, 0);
             actions.Controls.Add(action);
         }
-        toolbar.Controls.Add(dashboard, 0, 0);
-        toolbar.Controls.Add(actions, 1, 0);
+        toolbar.Controls.Add(dashboard);
+        toolbar.Controls.Add(actions);
         return toolbar;
     }
 
@@ -212,12 +209,13 @@ internal sealed class SessionTab : TabPage
         output.ReadOnly = true;
         output.BackColor = Theme.Dark;
         output.ForeColor = Color.FromArgb(211, 222, 235);
-        output.Font = new Font("Cascadia Mono", 10F);
+        output.Font = AppFonts.Create(10F);
         output.BorderStyle = BorderStyle.None;
         output.DetectUrls = true;
         output.WordWrap = true;
         output.HideSelection = false;
         ContextMenuStrip menu = new();
+        Theme.Menu(menu);
         menu.Items.Add("Copy", null, (_, _) => CopyOutput());
         menu.Items.Add("Clear view", null, (_, _) => ClearOutput());
         output.ContextMenuStrip = menu;
@@ -232,7 +230,9 @@ internal sealed class SessionTab : TabPage
         playerList.HideSelection = false;
         playerList.Columns.Add("Player", 145);
         playerList.Columns.Add("Ping", 65);
+        playerList.FitLastColumn = true;
         ContextMenuStrip menu = new();
+        Theme.Menu(menu);
         menu.Items.Add("Copy name", null, (_, _) => CopyPlayerName());
         menu.Items.Add("Prepare /msg", null, (_, _) => PrepareMessage());
         playerList.ContextMenuStrip = menu;
@@ -266,6 +266,7 @@ internal sealed class SessionTab : TabPage
         disconnect.Click += (_, _) => session.Stop();
         openLog.Click += (_, _) => OpenPath(session.LogPath);
         close.Click += async (_, _) => await CloseAsync();
+        more.Click += (_, _) => ShowMoreMenu();
         output.LinkClicked += (_, eventArgs) => ConfirmAndOpenUrl(eventArgs.LinkText);
         uiTimer.Tick += (_, _) =>
         {
@@ -298,17 +299,95 @@ internal sealed class SessionTab : TabPage
         if (message.Length == 0) return;
         commandHistory.Add(message);
         input.Clear();
-        if (string.Equals(message, "/respawn", StringComparison.OrdinalIgnoreCase))
+        LocalSessionCommand localCommand = SessionInput.Classify(message);
+        if (localCommand == LocalSessionCommand.Respawn)
         {
             await RunActionAsync(() => session.RespawnAsync(), "Respawn request failed");
             return;
         }
-        if (string.Equals(message, "/disconnect", StringComparison.OrdinalIgnoreCase))
+        if (localCommand == LocalSessionCommand.Disconnect)
         {
             session.Stop();
             return;
         }
         await RunActionAsync(() => session.SendAsync(message), "Message could not be sent");
+    }
+
+    private void ShowMoreMenu()
+    {
+        ContextMenuStrip menu = new();
+        Theme.Menu(menu);
+        ToolStripMenuItem quick = new("Quick commands");
+        if (session.Server.QuickCommands.Count == 0)
+            quick.DropDownItems.Add(new ToolStripMenuItem("No commands configured") { Enabled = false });
+        else
+            foreach (string command in session.Server.QuickCommands)
+                quick.DropDownItems.Add(command, null, async (_, _) => await SendQuickCommandAsync(command));
+        menu.Items.Add(quick);
+        menu.Items.Add("Protocol inspector", null, (_, _) => OpenInspector());
+        menu.Items.Add("Create support package", null, async (_, _) => await CreateSupportPackageAsync());
+        menu.Items.Add("Open session log", null, (_, _) => OpenPath(session.LogPath));
+        menu.Closed += (_, _) => BeginInvoke(() =>
+        {
+            if (!menu.IsDisposed) menu.Dispose();
+        });
+        menu.Show(more, new Point(0, more.Height));
+    }
+
+    private async Task SendQuickCommandAsync(string command)
+    {
+        if (SensitiveDataRedactor.IsSensitiveCommand(command) &&
+            BrandMessageBox.Show(this,
+                "This quick command appears to contain a login or registration secret. Send it once? It will be redacted from logs.",
+                "Sensitive quick command", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+        await RunActionAsync(() => session.SendAsync(command), "Quick command could not be sent");
+    }
+
+    private void OpenInspector()
+    {
+        if (!session.PacketInspectionEnabled)
+        {
+            BrandMessageBox.Show(this,
+                "Packet inspection is disabled. Enable Developer protocol inspector in Settings, then start a new session.",
+                "Protocol inspector", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        ProtocolInspectorForm inspector = new(session);
+        inspector.Show(this);
+    }
+
+    private async Task CreateSupportPackageAsync()
+    {
+        using SaveFileDialog save = new()
+        {
+            Title = "Create sanitized OeXYZ support package",
+            FileName = $"OeXYZ-support-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
+            Filter = "ZIP archive (*.zip)|*.zip",
+            AddExtension = true,
+            DefaultExt = "zip",
+            OverwritePrompt = true
+        };
+        if (save.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            more.Enabled = false;
+            await SupportPackageService.CreateAsync(new SupportPackageRequest(
+                save.FileName,
+                Application.ProductVersion,
+                session.Server,
+                session.TerminalException?.Message,
+                session.RecentDiagnostics,
+                session.UnknownPacketStatistics));
+            BrandMessageBox.Show(this,
+                "The sanitized package was created. It excludes account tokens, accounts.bin, passwords and full private chat history.",
+                "Support package ready", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception exception)
+        {
+            BrandMessageBox.Show(this, exception.Message, "Support package failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally { if (!IsDisposed) more.Enabled = true; }
     }
 
     private static async Task RunActionAsync(Func<Task> action, string caption)
@@ -319,7 +398,7 @@ internal sealed class SessionTab : TabPage
         }
         catch (Exception exception)
         {
-            MessageBox.Show($"{caption}:\n{exception.Message}", "OeXYZ Console Client",
+            BrandMessageBox.Show($"{caption}:\n{exception.Message}", "OeXYZ Console Client",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
@@ -338,7 +417,7 @@ internal sealed class SessionTab : TabPage
                 return;
             }
             string shown = contents.Length <= 3500 ? contents : contents[..3500] + "\n\n[Text shortened]";
-            DialogResult result = MessageBox.Show(this,
+            DialogResult result = BrandMessageBox.Show(this,
                 "This server requires you to accept its code of conduct before joining.\n\n" +
                 shown + "\n\nAccept these server rules?",
                 "Server code of conduct",
@@ -623,7 +702,7 @@ internal sealed class SessionTab : TabPage
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) return;
-        if (MessageBox.Show(this, $"Open this link in your browser?\n\n{uri}", "Open external link",
+        if (BrandMessageBox.Show(this, $"Open this link in your browser?\n\n{uri}", "Open external link",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
             OpenPath(uri.AbsoluteUri);
     }
@@ -666,7 +745,7 @@ internal sealed class SessionTab : TabPage
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

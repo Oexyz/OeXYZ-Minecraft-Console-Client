@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
 using OeXYZ.Updater;
 
 List<string> passed = [];
@@ -84,6 +85,59 @@ await RunAsync("checksum mismatch is rejected", async () =>
     }
 });
 
+Run("update staging rejects path traversal", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"oexyz-updater-traversal-{Guid.NewGuid():N}");
+    string archive = root + ".zip";
+    try
+    {
+        using (FileStream file = File.Create(archive))
+        using (ZipArchive zip = new(file, ZipArchiveMode.Create))
+        {
+            ZipArchiveEntry entry = zip.CreateEntry("../escape.exe");
+            using StreamWriter writer = new(entry.Open());
+            writer.Write("unsafe");
+        }
+        Throws<InvalidDataException>(() => UpdateInstaller.ExtractVerifiedArchive(archive, root));
+        False(File.Exists(Path.Combine(Path.GetDirectoryName(root)!, "escape.exe")), "Traversal entry escaped staging.");
+    }
+    finally
+    {
+        if (File.Exists(archive)) File.Delete(archive);
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+});
+
+Run("validated update replaces GUI and CLI with rollback backup", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"oexyz-updater-apply-{Guid.NewGuid():N}");
+    string stage = Path.Combine(root, "stage");
+    string install = Path.Combine(root, "install");
+    try
+    {
+        Directory.CreateDirectory(stage);
+        Directory.CreateDirectory(install);
+        byte[] oldBytes = Enumerable.Repeat((byte)1, 1024 * 1024 + 1).ToArray();
+        byte[] newBytes = Enumerable.Repeat((byte)2, 1024 * 1024 + 1).ToArray();
+        foreach (string name in new[] { "OeXYZ Console Client.exe", "oexyz.exe" })
+        {
+            File.WriteAllBytes(Path.Combine(stage, name), newBytes);
+            File.WriteAllBytes(Path.Combine(install, name), oldBytes);
+        }
+        PreparedUpdate prepared = UpdateInstaller.ValidateStage(stage);
+        string backup = UpdateInstaller.ApplyWithRollback(prepared, install);
+        foreach (string name in new[] { "OeXYZ Console Client.exe", "oexyz.exe" })
+        {
+            Equal(newBytes, File.ReadAllBytes(Path.Combine(install, name)));
+            Equal(oldBytes, File.ReadAllBytes(Path.Combine(backup, name + ".bak")));
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+});
+
 Console.WriteLine($"PASS: {passed.Count} updater tests");
 foreach (string name in passed) Console.WriteLine($"  - {name}");
 return;
@@ -154,5 +208,12 @@ static async Task ThrowsAsync<TException>(Func<Task> action) where TException : 
     {
         return;
     }
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static void Throws<TException>(Action action) where TException : Exception
+{
+    try { action(); }
+    catch (TException) { return; }
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
 }

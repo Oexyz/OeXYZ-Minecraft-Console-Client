@@ -1,13 +1,15 @@
 using System.Diagnostics;
+using OeXYZ.Authentication;
 using OeXYZ.Core;
 using OeXYZ.Protocol;
+using OeXYZ.Session;
 
 namespace OeXYZ.ConsoleClient;
 
 internal sealed class MainForm : Form
 {
     private readonly ProfileRepository repository = new(AppPaths.Profiles);
-    private readonly AuthenticationService authentication = new();
+    private readonly AuthenticationService authentication = new(AppPaths.ProtectedAccounts);
     private readonly object saveLock = new();
     private readonly bool demoMode;
     private readonly bool publicDemoMode;
@@ -16,7 +18,9 @@ internal sealed class MainForm : Form
     private readonly BrandTabControl sessions = new();
     private readonly Label summary = new();
     private readonly Button connect = Theme.Button("Connect", 130);
+    private readonly Button restoreSessions = Theme.Button("Restore previous sessions", 190);
     private readonly CancellationTokenSource formLifetime = new();
+    private readonly System.Windows.Forms.Timer logRetentionTimer = new() { Interval = 60_000 };
     private readonly Dictionary<Guid, CachedServerStatus> serverStatusCache = [];
     private readonly NotifyIcon trayIcon = new();
     private readonly ContextMenuStrip trayMenu = new();
@@ -71,14 +75,24 @@ internal sealed class MainForm : Form
         Shown += (_, _) =>
         {
             Theme.ApplyDarkTitleBar(this);
+            if (!demoMode)
+            {
+                ApplyLogRetention();
+                logRetentionTimer.Start();
+            }
             QueueStatusRefresh();
             if (demoMode)
             {
                 WindowState = FormWindowState.Maximized;
                 BeginInvoke(ConnectSelected);
             }
+            else if (profiles.Settings.RestoreSessionsOnStartup && profiles.LastSessions.Count > 0)
+            {
+                BeginInvoke(RestoreLastSessions);
+            }
         };
         RefreshProfiles();
+        logRetentionTimer.Tick += (_, _) => ApplyLogRetention();
     }
 
     private Panel BuildSidebar()
@@ -116,7 +130,7 @@ internal sealed class MainForm : Form
         Label subtitle = new()
         {
             Text = "CONSOLE CLIENT",
-            Font = new Font("Consolas", 9F, FontStyle.Bold),
+            Font = AppFonts.Create(9F, FontStyle.Bold),
             ForeColor = Theme.BlueBright,
             Location = new Point(79, 51),
             AutoSize = true
@@ -137,6 +151,21 @@ internal sealed class MainForm : Form
         ConfigureList(servers, "Server", "Address");
         servers.SmallImageList = serverIcons;
         servers.DoubleClick += (_, _) => EditServer();
+        servers.MouseDown += (_, eventArgs) =>
+        {
+            if (eventArgs.Button != MouseButtons.Right) return;
+            ListViewItem? item = servers.GetItemAt(eventArgs.X, eventArgs.Y);
+            if (item is not null) { item.Selected = true; item.Focused = true; }
+        };
+        ContextMenuStrip serverMenu = new();
+        Theme.Menu(serverMenu);
+        serverMenu.Items.Add("Connect selected", null, (_, _) => ConnectSelected());
+        serverMenu.Items.Add("Connect selected group", null, (_, _) => ConnectSelectedGroup());
+        serverMenu.Items.Add("Disconnect selected group", null, (_, _) => DisconnectSelectedGroup());
+        serverMenu.Items.Add(new ToolStripSeparator());
+        serverMenu.Items.Add("Connect all", null, (_, _) => ConnectAll());
+        serverMenu.Items.Add("Disconnect all", null, (_, _) => DisconnectAll());
+        servers.ContextMenuStrip = serverMenu;
         layout.Controls.Add(servers, 0, 5);
         layout.Controls.Add(ButtonRow(
             ("Add", AddServer),
@@ -156,17 +185,20 @@ internal sealed class MainForm : Form
             BackColor = Theme.Sidebar
         };
         connect.Height = 40;
+        connect.Margin = new Padding(3, 0, 3, 0);
         Theme.Primary(connect);
         connect.Click += (_, _) => ConnectSelected();
         Button logs = Theme.Button("Logs", 78);
         logs.Height = 40;
-        logs.Click += (_, _) => OpenPath(AppPaths.Logs);
-        Button data = Theme.Button("Data", 78);
-        data.Height = 40;
-        data.Click += (_, _) => OpenPath(AppPaths.Root);
+        logs.Margin = new Padding(3, 0, 3, 0);
+        logs.Click += (_, _) => { using LogViewerForm viewer = new(AppPaths.Logs); viewer.ShowDialog(this); };
+        Button groups = Theme.Button("Groups", 78);
+        groups.Height = 40;
+        groups.Margin = new Padding(3, 0, 3, 0);
+        groups.Click += (_, _) => ShowGroupMenu(groups);
         mainActions.Controls.Add(connect);
         mainActions.Controls.Add(logs);
-        mainActions.Controls.Add(data);
+        mainActions.Controls.Add(groups);
         layout.Controls.Add(mainActions, 0, 8);
 
         FlowLayoutPanel auxiliary = new()
@@ -179,6 +211,9 @@ internal sealed class MainForm : Form
         Button settings = Theme.Button("Settings", 92);
         Button updates = Theme.Button("Updates", 92);
         Button about = Theme.Button("About", 92);
+        settings.Margin = new Padding(3, 2, 3, 2);
+        updates.Margin = new Padding(3, 2, 3, 2);
+        about.Margin = new Padding(3, 2, 3, 2);
         settings.Click += (_, _) => ShowSettings();
         updates.Click += (_, _) => UpdateDialog.ShowFor(this);
         about.Click += (_, _) => ShowAbout();
@@ -193,7 +228,7 @@ internal sealed class MainForm : Form
     private void BuildWorkspace()
     {
         sessions.Dock = DockStyle.Fill;
-        sessions.Font = new Font("Bahnschrift SemiBold", 9F, FontStyle.Bold);
+        sessions.Font = AppFonts.Create(9F, FontStyle.Bold);
         sessions.HotTrack = true;
         TabPage welcome = new("Welcome") { BackColor = Theme.Background };
         TableLayoutPanel center = new()
@@ -219,7 +254,7 @@ internal sealed class MainForm : Form
         {
             Text = "Stay connected.\nRender nothing.",
             ForeColor = Theme.Ink,
-            Font = new Font("Bahnschrift SemiBold", 25F, FontStyle.Bold),
+            Font = AppFonts.Create(25F, FontStyle.Bold),
             Location = new Point(108, 0),
             Size = new Size(480, 104)
         };
@@ -231,7 +266,7 @@ internal sealed class MainForm : Form
         {
             Text = "A native Minecraft Java console for chat and reliable AFK sessions.",
             ForeColor = Color.FromArgb(185, 196, 211),
-            Font = new Font("Segoe UI", 11F),
+            Font = AppFonts.Create(11F),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         };
@@ -241,14 +276,25 @@ internal sealed class MainForm : Form
         center.Controls.Add(Feature("MC 1.8 - 26.2", "Protocol auto-detection"), 1, 2);
         center.Controls.Add(Feature("CHAT READY", "Messages, commands, respawn"), 0, 3);
         center.Controls.Add(Feature("AFK SAFE", "Keepalive and reconnect"), 1, 3);
-        Label foot = new()
+        FlowLayoutPanel foot = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Theme.Surface
+        };
+        Label footText = new()
         {
             Text = "Select an account and server, then click Connect.",
             ForeColor = Theme.Green,
-            Font = new Font("Consolas", 9F, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft
+            Font = AppFonts.Create(9F, FontStyle.Bold),
+            AutoSize = true,
+            Margin = new Padding(0, 20, 18, 0)
         };
+        restoreSessions.Margin = new Padding(0, 10, 0, 0);
+        restoreSessions.Click += (_, _) => RestoreLastSessions();
+        foot.Controls.Add(footText);
+        foot.Controls.Add(restoreSessions);
         center.Controls.Add(foot, 0, 4);
         center.SetColumnSpan(foot, 2);
         welcome.Controls.Add(center);
@@ -275,7 +321,7 @@ internal sealed class MainForm : Form
         {
             Text = heading,
             ForeColor = Theme.BlueBright,
-            Font = new Font("Consolas", 9F, FontStyle.Bold),
+            Font = AppFonts.Create(9F, FontStyle.Bold),
             Location = new Point(12, 10),
             AutoSize = true
         };
@@ -304,6 +350,7 @@ internal sealed class MainForm : Form
         foreach ((string text, Action action) in buttons)
         {
             Button button = Theme.Button(text, text == "Remove" ? 84 : 74);
+            button.Margin = new Padding(3, 0, 3, 0);
             button.Click += (_, _) => action();
             row.Controls.Add(button);
         }
@@ -321,10 +368,7 @@ internal sealed class MainForm : Form
         list.ShowItemToolTips = true;
         list.Columns.Add(firstColumn, 145);
         list.Columns.Add(secondColumn, 190);
-        list.Resize += (_, _) =>
-        {
-            if (list.Columns.Count > 1) list.Columns[1].Width = Math.Max(80, list.ClientSize.Width - list.Columns[0].Width - 2);
-        };
+        if (list is BrandListView branded) branded.FitLastColumn = true;
     }
 
     private ProfileDocument LoadProfiles()
@@ -332,7 +376,7 @@ internal sealed class MainForm : Form
         try { return repository.Load(); }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return new ProfileDocument();
         }
     }
@@ -355,7 +399,8 @@ internal sealed class MainForm : Form
             servers.Items.Clear();
             foreach (ServerProfile server in profiles.Servers)
             {
-                ListViewItem item = new(server.DisplayName) { Tag = server.Id };
+                string groupedName = server.Group.Length == 0 ? server.DisplayName : $"{server.DisplayName}  [{server.Group}]";
+                ListViewItem item = new(groupedName) { Tag = server.Id };
                 item.SubItems.Add(server.Address + (server.CustomPort > 0 ? $":{server.CustomPort}" : " · auto port"));
                 servers.Items.Add(item);
             }
@@ -369,6 +414,8 @@ internal sealed class MainForm : Form
         }
         summary.Text = $"{profiles.Accounts.Count} account{(profiles.Accounts.Count == 1 ? string.Empty : "s")}  ·  " +
                        $"{profiles.Servers.Count} server{(profiles.Servers.Count == 1 ? string.Empty : "s")}";
+        restoreSessions.Visible = !profiles.Settings.RestoreSessionsOnStartup && profiles.LastSessions.Count > 0;
+        restoreSessions.Text = $"Restore previous ({profiles.LastSessions.Count})";
         QueueStatusRefresh();
     }
 
@@ -394,9 +441,10 @@ internal sealed class MainForm : Form
     {
         AccountProfile? profile = SelectedAccount();
         if (profile is null) { SelectHint("account"); return; }
-        if (MessageBox.Show(this,
+        if (BrandMessageBox.Show(this,
                 $"Remove '{profile.DisplayName}' from the profile list?\n\nMicrosoft tokens are stored separately with Windows encryption.",
-                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
         profiles.Accounts.Remove(profile);
         SaveAndRefresh(null, null);
     }
@@ -423,8 +471,9 @@ internal sealed class MainForm : Form
     {
         ServerProfile? profile = SelectedServer();
         if (profile is null) { SelectHint("server"); return; }
-        if (MessageBox.Show(this, $"Remove server profile '{profile.DisplayName}'?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        if (BrandMessageBox.Show(this, $"Remove server profile '{profile.DisplayName}'?", Text,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
         profiles.Servers.Remove(profile);
         SaveAndRefresh(null, null);
     }
@@ -443,7 +492,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, "Profiles could not be saved:\n" + exception.Message, Text,
+            BrandMessageBox.Show(this, "Profiles could not be saved:\n" + exception.Message, Text,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -454,7 +503,7 @@ internal sealed class MainForm : Form
         ServerProfile? server = SelectedServer();
         if (account is null || server is null)
         {
-            MessageBox.Show(this, "Select one account and one server first.", Text,
+            BrandMessageBox.Show(this, "Select one account and one server first.", Text,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -472,7 +521,8 @@ internal sealed class MainForm : Form
             return;
         }
 
-        ConsoleSession session = new(account, server, authentication, ProfilesChangedFromSession);
+        ConsoleSession session = new(account, server, authentication, ProfilesChangedFromSession, AppPaths.Logs,
+            profiles.Settings.ProtocolInspectorEnabled);
         SessionTab page = new(session);
         session.NotificationRequested += ShowSessionNotification;
         session.ConnectedChanged += _ => PostToUi(UpdateTrayMenu);
@@ -520,12 +570,12 @@ internal sealed class MainForm : Form
         selected.Focused = true;
     }
 
-    private void SelectHint(string kind) => MessageBox.Show(this, $"Select a {kind} profile first.", Text,
+    private void SelectHint(string kind) => BrandMessageBox.Show(this, $"Select a {kind} profile first.", Text,
         MessageBoxButtons.OK, MessageBoxIcon.Information);
 
     private void ShowAbout()
     {
-        MessageBox.Show(this,
+        BrandMessageBox.Show(this,
             "OeXYZ Console Client\n\n" +
             "Native .NET desktop application with an independent Minecraft protocol implementation.\n" +
             "No renderer, no Node.js, no Java and no game files are required by end users.\n\n" +
@@ -544,6 +594,7 @@ internal sealed class MainForm : Form
 
     private void BuildTray()
     {
+        Theme.Menu(trayMenu);
         trayIcon.Icon = Icon ?? SystemIcons.Application;
         trayIcon.Text = "OeXYZ Minecraft Console Client";
         trayIcon.ContextMenuStrip = trayMenu;
@@ -582,6 +633,9 @@ internal sealed class MainForm : Form
         }
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Connect all profiles", null, (_, _) => ConnectAll());
+        foreach (string group in profiles.Servers.Select(server => server.Group).Where(group => group.Length > 0)
+                     .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(group => group, StringComparer.OrdinalIgnoreCase))
+            trayMenu.Items.Add($"Connect group: {group}", null, (_, _) => ConnectGroup(group));
         trayMenu.Items.Add("Disconnect all", null, (_, _) => DisconnectAll());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Open window", null, (_, _) => RestoreFromTray());
@@ -594,11 +648,79 @@ internal sealed class MainForm : Form
         if (account is null)
         {
             RestoreFromTray();
-            MessageBox.Show(this, "Add an account profile first.", Text,
+            BrandMessageBox.Show(this, "Add an account profile first.", Text,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         foreach (ServerProfile server in profiles.Servers) ConnectProfile(account, server);
+    }
+
+    private void ConnectSelectedGroup()
+    {
+        ServerProfile? selected = SelectedServer();
+        if (selected is null) { SelectHint("server"); return; }
+        ConnectGroup(selected.Group);
+    }
+
+    private void DisconnectSelectedGroup()
+    {
+        ServerProfile? selected = SelectedServer();
+        if (selected is null) { SelectHint("server"); return; }
+        DisconnectGroup(selected.Group);
+    }
+
+    private void ConnectGroup(string group)
+    {
+        AccountProfile? account = SelectedAccount() ?? profiles.Accounts.FirstOrDefault();
+        if (account is null) { SelectHint("account"); return; }
+        IEnumerable<ServerProfile> matching = group.Length == 0
+            ? profiles.Servers.Where(server => server.Group.Length == 0)
+            : profiles.Servers.Where(server => string.Equals(server.Group, group, StringComparison.OrdinalIgnoreCase));
+        foreach (ServerProfile server in matching) ConnectProfile(account, server);
+    }
+
+    private void DisconnectGroup(string group)
+    {
+        foreach (SessionTab page in sessions.TabPages.OfType<SessionTab>().Where(page =>
+                     string.Equals(page.Session.Server.Group, group, StringComparison.OrdinalIgnoreCase)))
+            page.Session.Stop();
+    }
+
+    private void ShowGroupMenu(Control owner)
+    {
+        ContextMenuStrip menu = new();
+        Theme.Menu(menu);
+        string[] groups = profiles.Servers.Select(server => server.Group)
+            .Where(group => group.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (groups.Length == 0) menu.Items.Add(new ToolStripMenuItem("No groups configured") { Enabled = false });
+        foreach (string group in groups)
+        {
+            ToolStripMenuItem item = new(group);
+            item.DropDownItems.Add("Connect group", null, (_, _) => ConnectGroup(group));
+            item.DropDownItems.Add("Disconnect group", null, (_, _) => DisconnectGroup(group));
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Connect all", null, (_, _) => ConnectAll());
+        menu.Items.Add("Disconnect all", null, (_, _) => DisconnectAll());
+        menu.Closed += (_, _) => BeginInvoke(() =>
+        {
+            if (!menu.IsDisposed) menu.Dispose();
+        });
+        menu.Show(owner, new Point(0, owner.Height));
+    }
+
+    private void RestoreLastSessions()
+    {
+        foreach (SessionBookmark bookmark in profiles.LastSessions.ToArray())
+        {
+            AccountProfile? account = profiles.Accounts.FirstOrDefault(item => item.Id == bookmark.AccountId);
+            ServerProfile? server = profiles.Servers.FirstOrDefault(item => item.Id == bookmark.ServerId);
+            if (account is not null && server is not null) ConnectProfile(account, server);
+        }
     }
 
     private void DisconnectAll()
@@ -761,6 +883,23 @@ internal sealed class MainForm : Form
         }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
+    private void ApplyLogRetention()
+    {
+        try
+        {
+            string[] activeLogs = sessions.TabPages.OfType<SessionTab>()
+                .Select(page => page.Session.LogPath)
+                .ToArray();
+            LogRetentionService.Apply(
+                AppPaths.Logs,
+                profiles.Settings.LogRetentionDays,
+                maximumBytes: LogRetentionService.DefaultMaximumBytes,
+                protectedPaths: activeLogs);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private static void OpenPath(string path)
     {
         try
@@ -770,7 +909,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -786,6 +925,11 @@ internal sealed class MainForm : Form
 
     private static ProfileDocument CreateDemoProfiles() => new()
     {
+        Settings = new ApplicationSettings
+        {
+            ProtocolInspectorEnabled = true,
+            NotificationsEnabled = false
+        },
         Accounts =
         [
             new AccountProfile
@@ -805,7 +949,9 @@ internal sealed class MainForm : Form
                 Version = "auto",
                 AntiAfk = true,
                 AutoReconnect = true,
-                AutoRespawn = true
+                AutoRespawn = true,
+                Group = "Test",
+                QuickCommands = ["/list", "/spawn"]
             }
         ]
     };
@@ -846,13 +992,30 @@ internal sealed class MainForm : Form
         }
         eventArgs.Cancel = true;
         closing = true;
+        logRetentionTimer.Stop();
         formLifetime.Cancel();
         SessionTab[] open = sessions.TabPages.OfType<SessionTab>().ToArray();
+        if (!demoMode)
+        {
+            profiles = profiles with
+            {
+                LastSessions = open.Where(page => page.Session.ShouldRestore)
+                    .Select(page => new SessionBookmark
+                    {
+                        AccountId = page.Session.Account.Id,
+                        ServerId = page.Session.Server.Id
+                    })
+                    .Distinct()
+                    .ToList()
+            };
+            lock (saveLock) repository.Save(profiles);
+        }
         foreach (SessionTab page in open) await page.CloseAsync();
         trayIcon.Visible = false;
         trayIcon.Dispose();
         trayMenu.Dispose();
         serverIcons.Dispose();
+        logRetentionTimer.Dispose();
         formLifetime.Dispose();
         Close();
     }

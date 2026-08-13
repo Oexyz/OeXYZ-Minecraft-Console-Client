@@ -98,6 +98,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public event Action<ConnectionMetrics>? MetricsChanged;
     public event Action<IReadOnlyList<PlayerListEntry>>? PlayerListChanged;
     public event Action<PacketTrace>? PacketTraced;
+    public bool PacketInspectionEnabled { get; set; }
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
 
@@ -496,6 +497,19 @@ public sealed class MinecraftConnection : IAsyncDisposable
             return;
         }
 
+        // Modern servers can use a separate play-state ping packet in addition
+        // to keep-alives. Velocity uses this to verify that the client is still
+        // responsive and closes the connection after roughly one minute when
+        // no pong is returned.
+        if (Is(inbound, "ping", packet.Id))
+        {
+            PacketReader reader = new(packet.Payload);
+            int value = reader.ReadInt();
+            await packets!.WriteAsync(Require(protocol.PacketIds.PlayServerbound, "pong"),
+                writer => writer.WriteInt(value), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (Is(inbound, "login", packet.Id))
         {
             if (!protocol.HasConfiguration)
@@ -555,8 +569,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             FormattedChatText formatting;
             if (protocol.ProtocolVersion >= 765)
             {
-                string nbtText = ChatTextCodec.FromAnonymousNbt(ref reader);
-                formatting = ChatTextCodec.ParseLegacy(nbtText);
+                formatting = ChatTextCodec.ParseAnonymousNbt(ref reader);
             }
             else
             {
@@ -569,13 +582,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
 
         if (Is(inbound, "player_chat", packet.Id) && protocol.ProtocolVersion >= 759)
         {
-            PacketReader reader = new(packet.Payload);
-            if (protocol.ProtocolVersion >= 770) _ = reader.ReadVarInt();
-            _ = reader.ReadUuid();
-            _ = reader.ReadVarInt();
-            if (reader.ReadBoolean()) _ = reader.ReadBytes(256);
-            string text = reader.ReadString(256);
-            FormattedChatText formatting = ChatTextCodec.ParseLegacy(text);
+            DecodedPlayerChat decoded = PlayerChatDecoder.Decode(packet.Payload, protocol.ProtocolVersion, uuid =>
+            {
+                lock (playersLock) return players.TryGetValue(uuid, out PlayerListEntry? player) ? player.Name : null;
+            });
+            FormattedChatText formatting = ChatTextCodec.ParseLegacy(decoded.Text);
             ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             return;
         }
@@ -586,8 +597,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             FormattedChatText formatting;
             if (protocol.ProtocolVersion >= 765)
             {
-                string nbtText = ChatTextCodec.FromAnonymousNbt(ref reader);
-                formatting = ChatTextCodec.ParseLegacy(nbtText);
+                formatting = ChatTextCodec.ParseAnonymousNbt(ref reader);
             }
             else
             {
@@ -1061,6 +1071,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         int payloadBytes,
         int wireBytes)
     {
+        if (!PacketInspectionEnabled) return;
         Dictionary<string, int> mappings = (packetState, direction) switch
         {
             (ConnectionState.Login, PacketDirection.Clientbound) => protocol.PacketIds.LoginClientbound,
@@ -1071,7 +1082,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
             (ConnectionState.Play, PacketDirection.Serverbound) => protocol.PacketIds.PlayServerbound,
             _ => EmptyPacketMappings.Value
         };
-        string? name = mappings.FirstOrDefault(pair => pair.Value == packetId).Key;
+        string? name = packetState == ConnectionState.Connecting &&
+                       direction == PacketDirection.Serverbound && packetId == 0
+            ? "handshake"
+            : mappings.FirstOrDefault(pair => pair.Value == packetId).Key;
         bool known = !string.IsNullOrEmpty(name);
         name ??= $"unknown_0x{packetId:X2}";
         if (!known)

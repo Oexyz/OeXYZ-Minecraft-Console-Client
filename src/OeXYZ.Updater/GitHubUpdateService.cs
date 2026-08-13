@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -23,7 +24,7 @@ public sealed record UpdateCheckResult(
 
 public static class GitHubUpdateService
 {
-    private const string ReleaseAssetName = "OeXYZ-Console-Client-win-x64.zip";
+    private const string LegacyX64AssetName = "OeXYZ-Console-Client-win-x64.zip";
     private const string ChecksumsAssetName = "SHA256SUMS";
     private const long MaximumReleaseBytes = 500L * 1024 * 1024;
     private static readonly HttpClient Http = CreateClient();
@@ -42,9 +43,21 @@ public static class GitHubUpdateService
                             ?? throw new InvalidDataException("GitHub returned an empty release response.");
         Version latest = ParseVersion(release.TagName);
         Version current = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
-        GitHubAsset archive = release.Assets.FirstOrDefault(asset =>
-                                  string.Equals(asset.Name, ReleaseAssetName, StringComparison.OrdinalIgnoreCase))
-                              ?? throw new InvalidDataException($"The release does not contain {ReleaseAssetName}.");
+        string architecture = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64 => "win-x64",
+            Architecture.Arm64 => "win-arm64",
+            _ => throw new PlatformNotSupportedException(
+                $"No OeXYZ Windows update asset exists for {RuntimeInformation.ProcessArchitecture}.")
+        };
+        string expectedSuffix = $"-{architecture}.zip";
+        GitHubAsset? archive = release.Assets.FirstOrDefault(asset =>
+            asset.Name.StartsWith("OeXYZ-Minecraft-Console-Client-", StringComparison.OrdinalIgnoreCase) &&
+            asset.Name.EndsWith(expectedSuffix, StringComparison.OrdinalIgnoreCase));
+        if (archive is null && architecture == "win-x64")
+            archive = release.Assets.FirstOrDefault(asset =>
+                string.Equals(asset.Name, LegacyX64AssetName, StringComparison.OrdinalIgnoreCase));
+        if (archive is null) throw new InvalidDataException($"The release does not contain an asset for {architecture}.");
         GitHubAsset checksums = release.Assets.FirstOrDefault(asset =>
                                     string.Equals(asset.Name, ChecksumsAssetName, StringComparison.OrdinalIgnoreCase))
                                 ?? throw new InvalidDataException($"The release does not contain {ChecksumsAssetName}.");

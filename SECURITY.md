@@ -28,9 +28,15 @@ unless they are strictly necessary to reproduce the problem.
 - Refreshable account sessions are encrypted with Windows DPAPI for the
   current Windows user in `%LOCALAPPDATA%\OeXYZ\ConsoleClient\accounts.bin`.
 - Profiles and logs remain local. There is no telemetry or analytics endpoint.
-- The updater only accepts an HTTPS `github.com` repository, downloads a named
-  release asset, and verifies it against the release's SHA-256 manifest.
-- An invalid or missing checksum stops the update; nothing is executed.
+- The updater only accepts an HTTPS `github.com` repository, selects the
+  running x64/ARM64 architecture, and verifies the release ZIP against its
+  SHA-256 manifest before bounded extraction.
+- An invalid/missing checksum, oversized archive, unsafe ZIP path, or missing
+  frontend stops the update. Installation requires confirmation, retains a
+  rollback backup, and attempts rollback if replacement fails.
+- Central redaction protects GUI/CLI logs, crash reports, and allowlist-built
+  support packages. Raw packet payloads, `accounts.bin`, passwords, and tokens
+  are excluded.
 - Offline-mode profiles are explicitly labelled and should only be used where
   the server owner permits them.
 

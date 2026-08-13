@@ -5,6 +5,7 @@ namespace OeXYZ.Protocol;
 
 public ref struct PacketReader
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly ReadOnlySpan<byte> data;
     private int offset;
 
@@ -43,7 +44,9 @@ public ref struct PacketReader
         int byteLength = ReadVarInt();
         if (byteLength < 0 || byteLength > maximumCharacters * 3 || byteLength > Remaining)
             throw new InvalidDataException("String length is outside the protocol limits.");
-        string value = Encoding.UTF8.GetString(Take(byteLength));
+        string value;
+        try { value = StrictUtf8.GetString(Take(byteLength)); }
+        catch (DecoderFallbackException exception) { throw new InvalidDataException("String contains invalid UTF-8.", exception); }
         if (value.Length > maximumCharacters) throw new InvalidDataException("String is too long.");
         return value;
     }
@@ -55,7 +58,7 @@ public ref struct PacketReader
     public string ReadNbtString()
     {
         int byteLength = ReadUnsignedShort();
-        return Encoding.UTF8.GetString(Take(byteLength));
+        return DecodeModifiedUtf8(Take(byteLength));
     }
 
     public ReadOnlySpan<byte> ReadRemaining() => Take(Remaining);
@@ -66,5 +69,66 @@ public ref struct PacketReader
         ReadOnlySpan<byte> result = data.Slice(offset, count);
         offset += count;
         return result;
+    }
+
+    private static string DecodeModifiedUtf8(ReadOnlySpan<byte> bytes)
+    {
+        StringBuilder result = new(bytes.Length);
+        for (int offset = 0; offset < bytes.Length;)
+        {
+            byte first = bytes[offset++];
+            if (first <= 0x7F)
+            {
+                result.Append((char)first);
+                continue;
+            }
+
+            if ((first & 0xE0) == 0xC0)
+            {
+                byte second = Continuation(bytes, ref offset);
+                int codeUnit = ((first & 0x1F) << 6) | (second & 0x3F);
+                if (codeUnit is > 0 and < 0x80)
+                    throw new InvalidDataException("NBT string contains an overlong modified UTF-8 sequence.");
+                result.Append((char)codeUnit);
+                continue;
+            }
+
+            if ((first & 0xF0) == 0xE0)
+            {
+                byte second = Continuation(bytes, ref offset);
+                byte third = Continuation(bytes, ref offset);
+                int codeUnit = ((first & 0x0F) << 12) | ((second & 0x3F) << 6) | (third & 0x3F);
+                if (codeUnit < 0x800)
+                    throw new InvalidDataException("NBT string contains an overlong modified UTF-8 sequence.");
+                // Java's modified UTF-8 encodes supplementary characters as two
+                // three-byte UTF-16 surrogate code units (CESU-8). Appending the
+                // code units preserves the valid surrogate pair in a .NET string.
+                result.Append((char)codeUnit);
+                continue;
+            }
+
+            if ((first & 0xF8) == 0xF0)
+            {
+                byte second = Continuation(bytes, ref offset);
+                byte third = Continuation(bytes, ref offset);
+                byte fourth = Continuation(bytes, ref offset);
+                int scalar = ((first & 0x07) << 18) | ((second & 0x3F) << 12) |
+                             ((third & 0x3F) << 6) | (fourth & 0x3F);
+                if (scalar is < 0x10000 or > 0x10FFFF)
+                    throw new InvalidDataException("NBT string contains an invalid UTF-8 scalar value.");
+                result.Append(char.ConvertFromUtf32(scalar));
+                continue;
+            }
+
+            throw new InvalidDataException("NBT string contains invalid modified UTF-8.");
+        }
+        return result.ToString();
+    }
+
+    private static byte Continuation(ReadOnlySpan<byte> bytes, ref int offset)
+    {
+        if (offset >= bytes.Length || (bytes[offset] & 0xC0) != 0x80)
+            throw new InvalidDataException("NBT string contains a truncated modified UTF-8 sequence.");
+        return bytes[offset++];
     }
 }

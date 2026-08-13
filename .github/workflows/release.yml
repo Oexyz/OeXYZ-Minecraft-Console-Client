@@ -36,45 +36,61 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run generate:protocol
-          git diff --exit-code -- src/OeXYZ.Protocol/Resources/protocol-catalog.json
+          git diff --exit-code -- src/OeXYZ.Protocol/Resources/protocol-catalog.json src/OeXYZ.Protocol/Resources/en-us.json
           dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
           dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
           dotnet run --project tests/OeXYZ.Core.Tests -c Release --no-build
           dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
           dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
+          dotnet run --project tests/OeXYZ.Session.Tests -c Release --no-build
 
-      - name: Build release archive
+      - name: Build architecture release archives
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
-          $publish = Join-Path $PWD 'artifacts/publish'
-          $stage = Join-Path $PWD 'artifacts/stage'
-          New-Item -ItemType Directory -Path $publish,$stage -Force | Out-Null
-          dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
-            -c Release -r win-x64 --self-contained true --no-restore `
-            -p:Version=$version `
-            -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" `
-            -o $publish
-          Copy-Item -Path (Join-Path $publish '*') -Destination $stage -Recurse
-          Copy-Item LICENSE,THIRD_PARTY_NOTICES.md,README.md -Destination $stage
-          $archive = Join-Path $PWD 'artifacts/OeXYZ-Console-Client-win-x64.zip'
-          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToUpperInvariant()
-          "$hash  OeXYZ-Console-Client-win-x64.zip" | Set-Content `
-            -LiteralPath (Join-Path $PWD 'artifacts/SHA256SUMS') -Encoding ascii
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $hashes = @()
+          foreach ($runtime in @('win-x64','win-arm64')) {
+            $gui = Join-Path $PWD "artifacts/$runtime/gui"
+            $cli = Join-Path $PWD "artifacts/$runtime/cli"
+            $stage = Join-Path $PWD "artifacts/$runtime/stage"
+            New-Item -ItemType Directory -Path $gui,$cli,$stage -Force | Out-Null
+            dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
+              -c Release -r $runtime --self-contained true -p:Version=$version `
+              -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $gui
+            dotnet publish src/OeXYZ.Cli/OeXYZ.Cli.csproj `
+              -c Release -r $runtime --self-contained true -p:Version=$version `
+              -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $cli
+            if (@(Get-ChildItem $gui -File).Count -ne 1 -or @(Get-ChildItem $cli -File).Count -ne 1) {
+              throw "Publish for $runtime was not one executable per frontend."
+            }
+            Copy-Item "$gui/OeXYZ Console Client.exe","$cli/oexyz.exe" -Destination $stage
+            Copy-Item LICENSE,THIRD_PARTY_NOTICES.md,README.md -Destination $stage
+            $docs = Join-Path $stage 'docs'
+            New-Item -ItemType Directory -Path $docs -Force | Out-Null
+            Copy-Item docs/CLI.md,docs/SECURITY_AND_PRIVACY.md,docs/UPDATER.md -Destination $docs
+            $name = "OeXYZ-Minecraft-Console-Client-v$version-$runtime.zip"
+            $archive = Join-Path $PWD "artifacts/$name"
+            Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToUpperInvariant()
+            $hashes += "$hash  $name"
+          }
+          $hashes | Set-Content -LiteralPath artifacts/SHA256SUMS -Encoding ascii
 
       - name: Attest release archive
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: artifacts/OeXYZ-Console-Client-win-x64.zip
+          subject-path: artifacts/OeXYZ-Minecraft-Console-Client-*.zip
 
       - name: Publish GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $archives = Get-ChildItem artifacts/OeXYZ-Minecraft-Console-Client-*.zip |
+            ForEach-Object FullName
           gh release create '${{ github.ref_name }}' `
-            artifacts/OeXYZ-Console-Client-win-x64.zip `
+            @archives `
             artifacts/SHA256SUMS `
             --verify-tag `
             --generate-notes `

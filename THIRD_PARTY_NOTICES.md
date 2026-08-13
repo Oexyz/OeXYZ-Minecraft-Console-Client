@@ -20,15 +20,27 @@ toolchain. The application also uses these NuGet packages:
 | Microsoft.Extensions.DependencyInjection.Abstractions | 8.0.1 | Transitive dependency injection contracts | [MIT, source](https://github.com/dotnet/runtime) |
 | Microsoft.Extensions.Logging.Abstractions | 8.0.1 | Transitive logging contracts | [MIT, source](https://github.com/dotnet/runtime) |
 | Microsoft.Web.WebView2 | 1.0.1823.32 | Transitive authentication browser support | [package and license](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.1823.32) |
+| System.Security.Cryptography.ProtectedData | 10.0.0 | Windows DPAPI bindings for encrypted local session storage | [MIT, source](https://github.com/dotnet/runtime) |
 
 The exact resolved dependency graph is pinned by NuGet lock files and is also
 recorded in each published `.deps.json` file.
 
+## Embedded font
+
+The Windows GUI embeds the Inter variable font (regular and italic) so the
+interface has identical typography without requiring a system font install.
+Inter is copyright The Inter Project Authors and licensed under the SIL Open
+Font License 1.1. The complete license is included at
+[`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).
+
+- Source: <https://github.com/rsms/inter>
+- License: <https://openfontlicense.org/open-font-license-official-text/>
+
 ## Build-time data
 
 `minecraft-data` 3.113.0 from PrismarineJS is used only by the maintainer tool
-that generates the committed packet-ID catalog. It is MIT-licensed. End users
-do not install Node.js or this package.
+that generates the committed packet-ID and English Minecraft translation
+catalogs. It is MIT-licensed. End users do not install Node.js or this package.
 
 - Source: <https://github.com/PrismarineJS/minecraft-data>
 - Package: <https://www.npmjs.com/package/minecraft-data/v/3.113.0>

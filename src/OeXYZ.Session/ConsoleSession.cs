@@ -1,11 +1,12 @@
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 using System.Net.Sockets;
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 
-namespace OeXYZ.ConsoleClient;
+namespace OeXYZ.Session;
 
-internal enum SessionLineKind
+public enum SessionLineKind
 {
     Information,
     Chat,
@@ -14,7 +15,7 @@ internal enum SessionLineKind
     Error
 }
 
-internal enum SessionLineCategory
+public enum SessionLineCategory
 {
     Chat,
     System,
@@ -22,7 +23,7 @@ internal enum SessionLineCategory
     Error
 }
 
-internal enum SessionNotificationKind
+public enum SessionNotificationKind
 {
     Disconnect,
     Reconnect,
@@ -32,16 +33,16 @@ internal enum SessionNotificationKind
     Error
 }
 
-internal sealed record SessionLine(
+public sealed record SessionLine(
     DateTimeOffset Timestamp,
     SessionLineKind Kind,
     SessionLineCategory Category,
     string Text,
     FormattedChatText? Formatting = null);
 
-internal sealed record SessionNotification(SessionNotificationKind Kind, string Title, string Message);
+public sealed record SessionNotification(SessionNotificationKind Kind, string Title, string Message);
 
-internal sealed record SessionSnapshot(
+public sealed record SessionSnapshot(
     string Status,
     SessionLineKind StatusKind,
     string ServerAddress,
@@ -56,18 +57,25 @@ internal sealed record SessionSnapshot(
     IReadOnlyList<PlayerListEntry> Players,
     bool IsConnected);
 
-internal sealed class ConsoleSession : IAsyncDisposable
+public sealed class ConsoleSession : IAsyncDisposable
 {
     private readonly AccountProfile account;
     private readonly ServerProfile server;
-    private readonly AuthenticationService authentication;
+    private readonly IIdentityProvider authentication;
     private readonly Action profilesChanged;
     private readonly ProtocolCatalog catalog = ProtocolCatalog.LoadEmbedded();
     private readonly CancellationTokenSource lifetime = new();
     private readonly object stateLock = new();
-    private readonly Channel<SessionLine> logLines = Channel.CreateUnbounded<SessionLine>(
-        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    private readonly Channel<SessionLine> logLines = Channel.CreateBounded<SessionLine>(
+        new BoundedChannelOptions(8192)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest
+        });
     private readonly Task logTask;
+    private readonly ConcurrentQueue<string> recentDiagnostics = new();
+    private readonly ConcurrentDictionary<string, long> unknownPacketStatistics = new();
     private MinecraftConnection? connection;
     private MinecraftIdentity? identity;
     private Task? runTask;
@@ -85,21 +93,26 @@ internal sealed class ConsoleSession : IAsyncDisposable
     private int respawnPending;
     private int dead;
     private int stopping;
+    private Exception? terminalException;
 
     public ConsoleSession(
         AccountProfile account,
         ServerProfile server,
-        AuthenticationService authentication,
-        Action profilesChanged)
+        IIdentityProvider authentication,
+        Action profilesChanged,
+        string logDirectory,
+        bool enablePacketInspection = false)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
         this.account = account;
         this.server = server;
         this.authentication = authentication;
         this.profilesChanged = profilesChanged;
-        Directory.CreateDirectory(AppPaths.Logs);
+        Directory.CreateDirectory(logDirectory);
         string safeName = string.Concat(server.DisplayName.Select(character =>
             Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
-        LogPath = Path.Combine(AppPaths.Logs, $"{DateTime.Now:yyyyMMdd-HHmmss}-{safeName}.log");
+        LogPath = Path.Combine(logDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{safeName}.log");
+        PacketInspectionEnabled = enablePacketInspection;
         logTask = WriteLogAsync();
     }
 
@@ -108,11 +121,19 @@ internal sealed class ConsoleSession : IAsyncDisposable
     public event Action<bool>? ConnectedChanged;
     public event Action<SessionSnapshot>? SnapshotChanged;
     public event Action<SessionNotification>? NotificationRequested;
+    public event Action<PacketTrace>? PacketTraced;
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
 
     public string LogPath { get; }
+    public bool PacketInspectionEnabled { get; }
+    public Exception? TerminalException => Volatile.Read(ref terminalException);
+    public Task Completion => runTask ?? Task.CompletedTask;
+    public IReadOnlyDictionary<string, long> UnknownPacketStatistics =>
+        new Dictionary<string, long>(unknownPacketStatistics);
+    public IReadOnlyList<string> RecentDiagnostics => recentDiagnostics.ToArray();
     public bool IsConnected => connection?.State == ConnectionState.Play;
+    public bool ShouldRestore => Volatile.Read(ref stopping) == 0 && runTask is { IsCompleted: false };
     public string Title => $"{account.DisplayName} @ {server.DisplayName}";
     public AccountProfile Account => account;
     public ServerProfile Server => server;
@@ -201,10 +222,14 @@ internal sealed class ConsoleSession : IAsyncDisposable
                         ? RunAntiAfkAsync(active, connectedLifetime.Token)
                         : Task.CompletedTask;
                     Task monitor = MonitorConnectionAsync(active, connectedLifetime.Token);
+                    Task startupCommands = server.StartupCommandsEnabled
+                        ? RunStartupCommandsAsync(active, connectedLifetime.Token)
+                        : Task.CompletedTask;
                     await active.Completion.ConfigureAwait(false);
                     connectedLifetime.Cancel();
                     await ObserveAuxiliaryAsync(antiAfk, connectedLifetime.Token).ConfigureAwait(false);
                     await ObserveAuxiliaryAsync(monitor, connectedLifetime.Token).ConfigureAwait(false);
+                    await ObserveAuxiliaryAsync(startupCommands, connectedLifetime.Token).ConfigureAwait(false);
                     failure = active.TerminalException ?? new IOException("The remote host closed the connection.");
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -224,6 +249,7 @@ internal sealed class ConsoleSession : IAsyncDisposable
 
                 if (cancellationToken.IsCancellationRequested) break;
                 failure ??= new IOException("The connection ended unexpectedly.");
+                Volatile.Write(ref terminalException, failure);
                 DisconnectDecision decision = DisconnectClassifier.Classify(failure);
                 Add(decision.Category == DisconnectCategory.Permanent ? SessionLineKind.Error : SessionLineKind.Warning,
                     decision.Category == DisconnectCategory.Permanent ? SessionLineCategory.Error : SessionLineCategory.Connection,
@@ -256,6 +282,12 @@ internal sealed class ConsoleSession : IAsyncDisposable
                 }
 
                 TimeSpan delay = backoff.DelayForAttempt(consecutiveFailures);
+                if (decision.MinimumRetryDelay is TimeSpan minimumDelay)
+                {
+                    TimeSpan configuredMaximum = TimeSpan.FromSeconds(server.ReconnectMaximumDelaySeconds);
+                    delay = TimeSpan.FromMilliseconds(Math.Min(configuredMaximum.TotalMilliseconds,
+                        Math.Max(delay.TotalMilliseconds, minimumDelay.TotalMilliseconds)));
+                }
                 DateTimeOffset retryAt = DateTimeOffset.UtcNow + delay;
                 SetNextReconnect(retryAt);
                 SetStatus($"RECONNECTING IN {Math.Ceiling(delay.TotalSeconds):0}s", SessionLineKind.Warning);
@@ -269,6 +301,7 @@ internal sealed class ConsoleSession : IAsyncDisposable
         }
         catch (Exception exception)
         {
+            Volatile.Write(ref terminalException, exception);
             Add(SessionLineKind.Error, SessionLineCategory.Error, FriendlyError(exception));
             Notify(SessionNotificationKind.Error, "Session error", $"{Title} · {FriendlyError(exception)}");
         }
@@ -308,6 +341,7 @@ internal sealed class ConsoleSession : IAsyncDisposable
 
     private void Wire(MinecraftConnection active, CancellationToken cancellationToken)
     {
+        active.PacketInspectionEnabled = PacketInspectionEnabled;
         active.CodeOfConductApproval = CodeOfConductApproval;
         active.Log += AddInformation;
         active.ChatReceived += OnChatReceived;
@@ -338,6 +372,33 @@ internal sealed class ConsoleSession : IAsyncDisposable
             lock (stateLock) players = currentPlayers.ToArray();
             PublishSnapshot();
         };
+        if (PacketInspectionEnabled) active.PacketTraced += trace =>
+        {
+            if (!trace.Known)
+            {
+                string key = $"{trace.State}:{trace.Direction}:0x{trace.PacketId:X2}";
+                unknownPacketStatistics.AddOrUpdate(key, 1, (_, count) => count + 1);
+            }
+            PacketTraced?.Invoke(trace);
+        };
+    }
+
+    private async Task RunStartupCommandsAsync(MinecraftConnection active, CancellationToken cancellationToken)
+    {
+        foreach (string command in server.StartupCommands.Take(8))
+        {
+            if (SensitiveDataRedactor.IsSensitiveCommand(command))
+            {
+                Add(SessionLineKind.Warning, SessionLineCategory.System,
+                    "A sensitive login/registration startup command was blocked. Send it manually if appropriate.");
+                continue;
+            }
+            await Task.Delay(server.StartupCommandDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+            if (active.State != ConnectionState.Play) return;
+            await active.SendChatAsync(command, cancellationToken).ConfigureAwait(false);
+            Add(SessionLineKind.Information, SessionLineCategory.System,
+                $"Startup command sent: {SensitiveDataRedactor.RedactCommand(command)}");
+        }
     }
 
     private void OnChatReceived(ChatLine line)
@@ -441,6 +502,8 @@ internal sealed class ConsoleSession : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         SessionLine line = new(DateTimeOffset.Now, kind, category, text.Trim(), formatting);
+        recentDiagnostics.Enqueue($"{line.Timestamp:O} [{line.Category}] [{line.Kind}] {SensitiveDataRedactor.RedactText(line.Text)}");
+        while (recentDiagnostics.Count > 200 && recentDiagnostics.TryDequeue(out _)) { }
         logLines.Writer.TryWrite(line);
         LineAdded?.Invoke(line);
     }

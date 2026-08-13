@@ -18,6 +18,26 @@ testing described in [TESTING.md](TESTING.md).
 
 ![OeXYZ welcome screen](images/client-welcome.png)
 
+## v1.2 health, hunger, translation, and respawn
+
+![OeXYZ showing real reduced health and hunger](images/v1.2-local-health-hunger.png)
+
+![OeXYZ translating a slime death and automatically respawning](images/v1.2-local-offline-dashboard.png)
+
+Both images came from an official local Minecraft 26.2 server. Commands changed
+the actual server-side health and hunger values; the server then killed the
+offline test player with a summoned slime. OeXYZ translated the Minecraft
+component key, detected death, sent the native respawn request, and recovered.
+
+## v1.2 premium online-mode and proxy evidence
+
+![OeXYZ receiving public chat through a premium Velocity server](images/v1.2-premium-public-chat.png)
+
+This Microsoft-authenticated session remained connected past the proxy's former
+60-second timeout and received real public chat from other players. The capture
+also shows the complete DPI-scaled session toolbar and live protocol metrics.
+OeXYZ did not send chat or gameplay automation during the public capture.
+
 ## Public offline-mode compatibility evidence
 
 ![OeXYZ connected passively to Minecraft Anarchy](images/public-anarchy-connected.png)

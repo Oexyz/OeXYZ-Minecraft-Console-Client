@@ -2,7 +2,7 @@
   <img src="assets/oexyz-logo.svg" width="112" alt="OeXYZ logo">
 </p>
 
-<h1 align="center">OeXYZ Console Client</h1>
+<h1 align="center">OeXYZ Minecraft Console Client</h1>
 
 <p align="center">
   Stay connected. Render nothing.<br>
@@ -21,22 +21,32 @@ It implements the Minecraft protocol directly, uses **no renderer**, supports
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-1389FD?logo=windows">
   <img alt="Minecraft Java 1.8 through 26.2" src="https://img.shields.io/badge/Minecraft%20Java-1.8%E2%80%9326.2-35c46a">
   <img alt="Protocols 47 through 776" src="https://img.shields.io/badge/protocols-47%E2%80%93776-8b5cf6">
-  <img alt="Sixteen deterministic tests" src="https://img.shields.io/badge/tests-16%20deterministic-35c46a">
+  <img alt="Thirty-three deterministic tests" src="https://img.shields.io/badge/tests-33%20deterministic-35c46a">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
 </p>
 
-![OeXYZ connected to a local Minecraft 26.2 server](docs/images/client-connected.png)
+![OeXYZ connected to a premium Minecraft 26.2 proxy with live public chat](docs/images/v1.2-premium-public-chat.png)
 
 OeXYZ keeps a real Minecraft Java session connected for chat, commands,
-reconnect, and AFK use. Everything an end user needs is in one self-contained
-Windows release: no terminal, Node.js, Java runtime, Minecraft installation, or
-separate .NET installation.
+reconnect, and AFK use. Everything an end user needs is in two self-contained,
+single-file Windows executables: the clickable GUI and optional `oexyz.exe`
+headless CLI. No Node.js, Java runtime, Minecraft installation, or separate
+.NET installation is needed.
 
 ## Download
 
-Download `OeXYZ-Console-Client-win-x64.zip` from the
+Download the archive matching your Windows computer from the
 [latest GitHub release](https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client/releases/latest), extract it, and open
 `OeXYZ Console Client.exe`.
+
+| System | Release asset |
+|---|---|
+| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.2.0-win-x64.zip` |
+| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.2.0-win-arm64.zip` |
+
+Each archive contains exactly `OeXYZ Console Client.exe` for the GUI and
+`oexyz.exe` for terminal/headless use, plus documentation. The executables do
+not silently fall back to another CPU architecture.
 
 The release also contains `SHA256SUMS`. The in-app updater checks the same
 manifest before accepting a downloaded archive. Releases are deliberately
@@ -54,14 +64,16 @@ archive without trusting a copied checksum:
 
 ```powershell
 gh release download --repo Oexyz/OeXYZ-Minecraft-Console-Client `
-  --pattern 'OeXYZ-Console-Client-win-x64.zip' `
+  --pattern 'OeXYZ-Minecraft-Console-Client-*-win-x64.zip' `
   --pattern 'SHA256SUMS'
 
-$expected = ((Get-Content SHA256SUMS -Raw) -split '\s+')[0]
-$actual = (Get-FileHash 'OeXYZ-Console-Client-win-x64.zip' -Algorithm SHA256).Hash
+$archive = Get-ChildItem 'OeXYZ-Minecraft-Console-Client-*-win-x64.zip' | Select-Object -First 1
+$line = Get-Content SHA256SUMS | Where-Object { $_ -like "*$($archive.Name)" }
+$expected = ($line -split '\s+')[0]
+$actual = (Get-FileHash $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw 'Release checksum mismatch.' }
 
-gh attestation verify 'OeXYZ-Console-Client-win-x64.zip' `
+gh attestation verify $archive `
   --repo Oexyz/OeXYZ-Minecraft-Console-Client
 ```
 
@@ -107,6 +119,69 @@ and source code.
   appended in batches, and do not steal the scroll position while reading
   older messages.
 - Show newer server codes of conduct and require a deliberate approval click.
+- Organize profiles into session groups, connect/disconnect a group, and opt in
+  to restoring sessions that were connected at the previous clean shutdown.
+- Add safe one-click quick commands and a bounded, opt-in startup-command list;
+  login, registration, and password commands are blocked from automatic use.
+- Browse, search, export, and explicitly delete local logs; apply 30/90-day or
+  unlimited age retention with a hard 300 MB total cap that removes the oldest
+  closed logs; and create a centrally redacted support ZIP.
+- Inspect packet timestamp/direction/ID/name/size and local unknown-packet
+  counts in an opt-in developer view. Payload/secret dumps are not produced.
+
+## Quick start
+
+### Clickable Windows GUI
+
+1. Extract the release for your architecture and open
+   `OeXYZ Console Client.exe`.
+2. Add an account, then add a server profile. A host, `host:port`, separate
+   custom port, or DNS SRV hostname is accepted.
+3. Select both profiles and click **Connect**.
+
+### Headless CLI
+
+The CLI uses the exact same profiles, Microsoft-session store, protocol code,
+and session lifecycle as the GUI:
+
+```powershell
+.\oexyz.exe list
+.\oexyz.exe status survival
+.\oexyz.exe run survival
+```
+
+To make the short command available in newly opened terminals, run this once
+from the extracted release folder:
+
+```powershell
+.\oexyz.exe install-path
+oexyz run survival
+```
+
+`oexyz uninstall-path` reverses only that directory entry. The helper changes
+the current user's `PATH`; it installs no service and creates no shell alias.
+
+Available commands are `list`, `profiles`, `status <profile>`,
+`run|connect <profile>`, `run-address <host[:port]>`, `connect-all`, and `connect-group <group>`. Use
+`--account <name>` when more than one account exists, `--config <path>` for an
+explicit profile file, `--log-file <path>` plus `--log-level`, and
+`--inspect-packets` for safe metadata-only tracing. Chat and commands come from
+stdin; `/quit` or Ctrl+C performs a graceful shutdown.
+
+| Exit code | Meaning |
+|---:|---|
+| 0 | Success or deliberate shutdown |
+| 2 | Profile/config target not found |
+| 3 | Authentication failed |
+| 4 | Protocol unsupported |
+| 5 | Connection failed |
+| 6 | Permanent server rejection |
+| 64 | Invalid arguments |
+| 70 | Internal error |
+
+Microsoft login currently uses Windows DPAPI and the browser flow shared with
+the GUI. Remote Linux device-code UX is planned for v1.3 and is not claimed as
+available in v1.2.
 
 ## Choosing the right headless client
 
@@ -138,6 +213,18 @@ account, send a password, or send chat. The server is independently operated
 and is not affiliated with or endorsed by OeXYZ. Details and limitations are in
 [the test report](docs/TESTING.md).
 
+## Premium online-mode and proxy proof
+
+![OeXYZ receiving real public chat through a Velocity proxy](docs/images/v1.2-premium-public-chat.png)
+
+This is a real Microsoft-authenticated protocol-776 session on
+`mc.purityvanilla.com`. It shows public messages from other players, health,
+hunger, position, live TAB count, ping, traffic, packet counters, and an uptime
+beyond the proxy's former 60-second timeout. OeXYZ sent no chat or gameplay
+automation during the capture. The compatibility fix responds to modern
+play-state ping packets with the required pong while keeping the honest `OeXYZ`
+brand. The independently operated server is not affiliated with this project.
+
 ## Using the app
 
 1. Click **Add** under Accounts.
@@ -162,6 +249,15 @@ Useful session controls:
 - **Settings** controls tray behavior and local notifications. Closing continues
   in the tray only when that option is explicitly enabled; tray **Exit** always
   shuts sessions down cleanly.
+- Set an optional **Session group** in each server profile. Use **Groups**, the
+  server context menu, the tray menu, or `oexyz connect-group <group>`.
+- **Restore previous sessions** is a manual button by default. Automatic restore
+  remains disabled until it is explicitly enabled in Settings.
+- Configure up to 12 quick commands or 8 delayed startup commands per profile.
+  Startup execution is disabled by default and sensitive authentication
+  commands are never permitted to run automatically.
+- **Logs** opens the searchable viewer. **More** inside a session exposes the
+  sanitized support-package export and opt-in protocol inspector.
 
 <details>
 <summary>Welcome screen</summary>
@@ -180,18 +276,24 @@ The runtime is intentionally small and transparent:
 | .NET 10 Windows runtime | Self-contained native Windows application host | Yes, bundled in the release |
 | CmlLib.Core.Auth.Microsoft 3.3.1 | Microsoft/Xbox/Minecraft browser authentication | Yes |
 | Windows DPAPI | Encrypting saved account sessions for the current user | Yes, built into Windows |
-| PrismarineJS `minecraft-data` 3.113.0 | Generating the committed packet-ID table | No, build time only |
+| Embedded Inter variable fonts | Consistent DPI-aware GUI typography | Yes, loaded locally under the SIL Open Font License |
+| PrismarineJS `minecraft-data` 3.113.0 | Generating the committed packet-ID and English translation catalogs | No, build time only |
 
 OeXYZ contains no Minecraft game executable, game assets, server JAR, hidden
 launcher, advertising SDK, telemetry SDK, or remotely loaded plugin system.
-The protocol code is in [`src/OeXYZ.Protocol`](src/OeXYZ.Protocol), the verified
-download code is in [`src/OeXYZ.Updater`](src/OeXYZ.Updater), the desktop
-application is in [`src/OeXYZ.ConsoleClient`](src/OeXYZ.ConsoleClient), and the
-generator is in [`tools/protocol-catalog`](tools/protocol-catalog).
+The protocol code is in [`src/OeXYZ.Protocol`](src/OeXYZ.Protocol), shared
+session lifecycle in [`src/OeXYZ.Session`](src/OeXYZ.Session), profiles and
+policies in [`src/OeXYZ.Core`](src/OeXYZ.Core), authentication in
+[`src/OeXYZ.Authentication`](src/OeXYZ.Authentication), the CLI in
+[`src/OeXYZ.Cli`](src/OeXYZ.Cli), verified updating in
+[`src/OeXYZ.Updater`](src/OeXYZ.Updater), and the Windows UI in
+[`src/OeXYZ.ConsoleClient`](src/OeXYZ.ConsoleClient).
 
 See also:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Headless CLI reference](docs/CLI.md)
+- [Release and updater integrity](docs/UPDATER.md)
 - [Objective comparison](docs/COMPARISON.md)
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
 - [Testing evidence](docs/TESTING.md)
@@ -223,7 +325,11 @@ dotnet build OeXYZ.ConsoleClient.slnx -c Release --no-restore
 dotnet run --project tests/OeXYZ.Core.Tests -c Release --no-build
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
 dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
+dotnet run --project tests/OeXYZ.Session.Tests -c Release --no-build
 dotnet publish src/OeXYZ.ConsoleClient -c Release -r win-x64 --self-contained true
+dotnet publish src/OeXYZ.Cli -c Release -r win-x64 --self-contained true
+dotnet publish src/OeXYZ.ConsoleClient -c Release -r win-arm64 --self-contained true
+dotnet publish src/OeXYZ.Cli -c Release -r win-arm64 --self-contained true
 ```
 
 To regenerate protocol mappings:
@@ -233,9 +339,9 @@ npm ci
 npm run generate:protocol
 ```
 
-The generated catalog currently contains 74 release mappings from protocol 47
-through protocol 776. Release automation verifies that regenerating it produces
-no uncommitted difference.
+The generated catalogs currently contain 74 release mappings from protocol 47
+through protocol 776 and 7,886 English translation entries. Release automation
+verifies that regenerating either file produces no uncommitted difference.
 
 ## Roadmap
 
@@ -246,19 +352,32 @@ tray mode, local notifications, searchable/formatted chat, command history,
 live player list, cached server overview, custom-port stability, and Per-Monitor
 V2 DPI scaling.
 
-### v1.2 — Headless and reliability 🚧 in progress
+### v1.2 — Headless and reliability ✅ complete
 
 Shared GUI/CLI session core, `oexyz` headless commands and reversible PATH
 setup, session groups/restore, configurable Anti-AFK, quick/startup commands,
 log viewer, redacted diagnostics, protocol inspector, fuzz/replay coverage,
-Windows ARM64 releases, and an architecture-aware rollback updater.
+Windows x64/ARM64 releases, and an architecture-aware rollback updater.
 
 ### v1.3 — Linux, Docker, and Raspberry Pi 📋 planned
 
-Planned—not currently claimed as supported: Linux x64/ARM64 headless builds,
-Raspberry Pi 4/5 and Raspberry Pi OS 64-bit, systemd, non-root multi-architecture
-Docker images, persistent config/log volumes, health checks, graceful SIGTERM,
-and resource-conscious multi-session 24/7 operation.
+Planned—not currently claimed as supported:
+
+- Linux x64 and Linux ARM64 headless builds
+- Raspberry Pi 4/5, Raspberry Pi OS 64-bit, Debian, and Ubuntu ARM64
+- `systemd` service and graceful SIGTERM shutdown
+- AMD64/ARM64 minimal Docker image running as a non-root user
+- Docker Compose for resource-conscious multi-session 24/7 AFK use
+- persistent config and log volumes, log rotation, restart guidance, and a
+  local health check
+- no credentials baked into images; a deliberate remote device-code/OAuth UX
+
+The protocol, profile, reconnect, diagnostics, and session projects are already
+free of WinForms. The CLI remains `net10.0`, avoids busy waiting, uses
+`CancellationToken` and async I/O, and reads an explicit `--config` file or the
+non-secret `OEXYZ_CONFIG` path override. v1.3 still needs a secure cross-platform
+Microsoft token store and release qualification before Linux artifacts can be
+advertised.
 
 ## Responsible use
 
@@ -268,10 +387,11 @@ rules and disable features it does not allow. OeXYZ does not implement CAPTCHA
 bypasses, anti-bot evasion, ban evasion, brand impersonation, spam, or automatic
 account registration.
 
-PikaNetwork, for example, accepted the protocol through active play state during
-testing and then explicitly rejected this client type. That server is therefore
-not presented as a supported AFK destination, and OeXYZ will not disguise itself
-to bypass the restriction.
+The final v1.2 passive compatibility check remained connected through a modern
+Velocity proxy beyond its keepalive timeout with the honest `OeXYZ` brand and
+without sending chat or gameplay automation. That compatibility result is not
+a promise that every server permits AFK clients: rules and enforcement can
+change, and OeXYZ will never disguise itself to bypass them.
 
 Minecraft is a trademark of Microsoft Corporation. This project is independent
 and is not affiliated with, endorsed by, or approved by Microsoft or Mojang

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>oexyz</AssemblyName>
+    <RootNamespace>OeXYZ.Cli</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <Version>1.2.0</Version>
+    <Authors>OeXYZ contributors</Authors>
+    <Product>OeXYZ Headless Client</Product>
+    <Description>Headless Minecraft Java console client for chat and AFK sessions.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Oexyz/OeXYZ-Minecraft-Console-Client</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OeXYZ.Authentication\OeXYZ.Authentication.csproj" />
+    <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
+    <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+    <ProjectReference Include="..\OeXYZ.Session\OeXYZ.Session.csproj" />
+  </ItemGroup>
+</Project>

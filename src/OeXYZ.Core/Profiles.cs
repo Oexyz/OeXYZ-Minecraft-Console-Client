@@ -59,6 +59,7 @@ public sealed record ApplicationSettings
     public bool NotifyMention { get; init; } = true;
     public bool NotifyPrivateMessage { get; init; } = true;
     public bool RestoreSessionsOnStartup { get; init; }
+    public bool ProtocolInspectorEnabled { get; init; }
     public int LogRetentionDays { get; init; } = 90;
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalData { get; init; }
@@ -72,7 +73,7 @@ public sealed record SessionBookmark
 
 public sealed record ProfileDocument
 {
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
     public int FormatVersion { get; init; } = CurrentFormatVersion;
     public List<AccountProfile> Accounts { get; init; } = [];
@@ -127,6 +128,8 @@ public sealed record ProfileDocument
             StartupCommandDelayMilliseconds = Math.Clamp(server.StartupCommandDelayMilliseconds, 500, 30_000),
             QuickCommands = SanitizeCommands(server.QuickCommands, 12),
             StartupCommands = SanitizeCommands(server.StartupCommands, 8)
+                .Where(command => !SensitiveDataRedactor.IsSensitiveCommand(command))
+                .ToList()
         };
     }
 

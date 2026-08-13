@@ -105,16 +105,23 @@ public static class ChatTextCodec
     }
 
     public static string FromAnonymousNbt(ref PacketReader reader)
+        => ParseAnonymousNbt(ref reader).Text;
+
+    public static FormattedChatText ParseAnonymousNbt(ref PacketReader reader)
     {
-        try
-        {
-            object? value = ReadPayload(ref reader, reader.ReadByte(), 0);
-            return StripLegacyFormatting(FlattenNbt(value));
-        }
+        try { return ReadAnonymousNbtFormatting(ref reader); }
         catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException)
         {
-            return "[Unreadable server message]";
+            return ParseLegacy("[Unreadable server message]");
         }
+    }
+
+    internal static FormattedChatText ReadAnonymousNbtFormatting(ref PacketReader reader)
+    {
+        object? value = ReadPayload(ref reader, reader.ReadByte(), 0);
+        List<ChatRun> runs = [];
+        AppendNbt(value, new ChatStyle(), runs);
+        return Build(runs);
     }
 
     private static string FlattenJson(JsonElement element)
@@ -122,6 +129,9 @@ public static class ChatTextCodec
         return element.ValueKind switch
         {
             JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => bool.TrueString.ToLowerInvariant(),
+            JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
             JsonValueKind.Array => string.Concat(element.EnumerateArray().Select(FlattenJson)),
             JsonValueKind.Object => FlattenJsonObject(element),
             _ => string.Empty
@@ -134,6 +144,11 @@ public static class ChatTextCodec
         {
             case JsonValueKind.String:
                 AppendFormattedLegacy(runs, element.GetString() ?? string.Empty, inherited);
+                return;
+            case JsonValueKind.Number:
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                AppendFormattedLegacy(runs, FlattenJson(element), inherited);
                 return;
             case JsonValueKind.Array:
                 foreach (JsonElement child in element.EnumerateArray()) AppendJson(child, inherited, runs);
@@ -324,11 +339,14 @@ public static class ChatTextCodec
                 return string.Empty;
             case string text:
                 return text;
+            case sbyte or short or int or long or float or double:
+                return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
             case List<object?> list:
                 return string.Concat(list.Select(FlattenNbt));
             case Dictionary<string, object?> compound:
                 string result = string.Empty;
                 if (compound.TryGetValue("text", out object? textValue)) result += FlattenNbt(textValue);
+                else if (compound.TryGetValue(string.Empty, out object? unnamedText)) result += FlattenNbt(unnamedText);
                 else if (compound.TryGetValue("translate", out object? translate))
                 {
                     string key = FlattenNbt(translate);
@@ -344,20 +362,166 @@ public static class ChatTextCodec
         }
     }
 
+    private static void AppendNbt(object? value, ChatStyle inherited, List<ChatRun> runs)
+    {
+        switch (value)
+        {
+            case null:
+                return;
+            case string text:
+                AppendFormattedLegacy(runs, text, inherited);
+                return;
+            case sbyte or short or int or long or float or double:
+                AppendFormattedLegacy(runs,
+                    Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                    inherited);
+                return;
+            case List<object?> list:
+                foreach (object? child in list) AppendNbt(child, inherited, runs);
+                return;
+            case Dictionary<string, object?> compound:
+                ChatStyle style = ReadNbtStyle(compound, inherited);
+                if (compound.TryGetValue("text", out object? textValue))
+                    AppendNbt(textValue, style, runs);
+                else if (compound.TryGetValue(string.Empty, out object? unnamedText))
+                    AppendNbt(unnamedText, style, runs);
+                else if (compound.TryGetValue("translate", out object? translate))
+                {
+                    string key = FlattenNbt(translate);
+                    IReadOnlyList<object?> arguments = compound.TryGetValue("with", out object? with) && with is List<object?> values
+                        ? values
+                        : [];
+                    AppendTranslatedNbt(key, arguments, style, runs);
+                }
+                if (compound.TryGetValue("extra", out object? extra)) AppendNbt(extra, style, runs);
+                return;
+            default:
+                return;
+        }
+    }
+
+    private static ChatStyle ReadNbtStyle(Dictionary<string, object?> compound, ChatStyle inherited)
+    {
+        string? color = inherited.Color;
+        if (compound.TryGetValue("color", out object? colorValue) && colorValue is string requested)
+            color = string.Equals(requested, "reset", StringComparison.OrdinalIgnoreCase) ? null : requested;
+        return new ChatStyle(
+            color,
+            ReadNbtBoolean(compound, "bold", inherited.Bold),
+            ReadNbtBoolean(compound, "italic", inherited.Italic),
+            ReadNbtBoolean(compound, "underlined", inherited.Underlined),
+            ReadNbtBoolean(compound, "strikethrough", inherited.Strikethrough));
+    }
+
+    private static bool ReadNbtBoolean(Dictionary<string, object?> compound, string name, bool inherited)
+    {
+        if (!compound.TryGetValue(name, out object? value)) return inherited;
+        return value switch
+        {
+            sbyte number => number != 0,
+            short number => number != 0,
+            int number => number != 0,
+            long number => number != 0,
+            _ => inherited
+        };
+    }
+
+    private static void AppendTranslatedNbt(
+        string key,
+        IReadOnlyList<object?> arguments,
+        ChatStyle style,
+        List<ChatRun> runs)
+    {
+        void Text(string value) => AppendFormattedLegacy(runs, value, style);
+        void Argument(int index)
+        {
+            if (index >= 0 && index < arguments.Count) AppendNbt(arguments[index], style, runs);
+            else Text("?");
+        }
+
+        switch (key)
+        {
+            case "%s" when arguments.Count > 0:
+                Argument(0);
+                return;
+            case "chat.type.text":
+                Text("<"); Argument(0); Text("> "); Argument(1);
+                return;
+            case "chat.type.announcement":
+                Text("["); Argument(0); Text("] "); Argument(1);
+                return;
+            case "chat.square_brackets":
+                Text("["); Argument(0); Text("]");
+                return;
+            case "chat.type.advancement.task":
+                Argument(0); Text(" has made the advancement "); Argument(1);
+                return;
+            default:
+                string[] flattened = arguments.Select(FlattenNbt).ToArray();
+                Text(Translate(key, flattened));
+                return;
+        }
+    }
+
     private static string Translate(string key, IReadOnlyList<string> arguments)
     {
+        if (MinecraftTranslations.TryGet(key, out string pattern))
+            return FormatTranslationPattern(pattern, arguments);
         string Argument(int index) => index < arguments.Count ? arguments[index] : "?";
         return key switch
         {
             "chat.type.text" => $"<{Argument(0)}> {Argument(1)}",
             "chat.type.announcement" => $"[{Argument(0)}] {Argument(1)}",
+            "chat.square_brackets" => $"[{Argument(0)}]",
+            "chat.type.advancement.task" => $"{Argument(0)} has made the advancement {Argument(1)}",
             "multiplayer.player.joined" => $"{Argument(0)} joined the game",
             "multiplayer.player.left" => $"{Argument(0)} left the game",
             "commands.kill.successful" or "commands.kill.success.single" => $"Killed {Argument(0)}",
             _ when key.StartsWith("death.", StringComparison.Ordinal) =>
                 arguments.Count == 0 ? "Player died" : string.Join(" ", arguments) + " died",
+            _ when key.Contains('%', StringComparison.Ordinal) => FormatTranslationPattern(key, arguments),
             _ => arguments.Count == 0 ? key : key + ": " + string.Join(" ", arguments)
         };
+    }
+
+    private static string FormatTranslationPattern(string pattern, IReadOnlyList<string> arguments)
+    {
+        StringBuilder result = new(pattern.Length + arguments.Sum(argument => argument.Length));
+        int sequentialIndex = 0;
+        for (int index = 0; index < pattern.Length; index++)
+        {
+            if (pattern[index] != '%' || index + 1 >= pattern.Length)
+            {
+                result.Append(pattern[index]);
+                continue;
+            }
+
+            if (pattern[index + 1] == '%')
+            {
+                result.Append('%');
+                index++;
+                continue;
+            }
+
+            int cursor = index + 1;
+            int explicitIndex = 0;
+            while (cursor < pattern.Length && char.IsAsciiDigit(pattern[cursor]))
+            {
+                explicitIndex = checked(explicitIndex * 10 + pattern[cursor] - '0');
+                cursor++;
+            }
+            bool indexed = cursor > index + 1 && cursor < pattern.Length && pattern[cursor] == '$';
+            if (indexed) cursor++;
+            if (cursor < pattern.Length && pattern[cursor] == 's')
+            {
+                int argumentIndex = indexed ? explicitIndex - 1 : sequentialIndex++;
+                result.Append(argumentIndex >= 0 && argumentIndex < arguments.Count ? arguments[argumentIndex] : "?");
+                index = cursor;
+                continue;
+            }
+            result.Append('%');
+        }
+        return result.ToString();
     }
 
     private static string StripLegacyFormatting(string value)

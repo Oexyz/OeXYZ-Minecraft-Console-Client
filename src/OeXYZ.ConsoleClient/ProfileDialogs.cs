@@ -91,12 +91,12 @@ internal sealed class AccountDialog : Form
         AccountKind kind = kindBox.SelectedIndex == 1 ? AccountKind.Offline : AccountKind.Microsoft;
         if (name.Length == 0)
         {
-            MessageBox.Show(this, "Enter a friendly profile name.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(this, "Enter a friendly profile name.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         if (kind == AccountKind.Offline && !Regex.IsMatch(login, "^[A-Za-z0-9_]{1,16}$"))
         {
-            MessageBox.Show(this, "Offline player names must contain 1-16 letters, numbers or underscores.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(this, "Offline player names must contain 1-16 letters, numbers or underscores.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         Result = new AccountProfile
@@ -129,6 +129,10 @@ internal sealed class ServerDialog : Form
     private readonly NumericUpDown reconnectMaximumBox = new();
     private readonly NumericUpDown reconnectAttemptsBox = new();
     private readonly NumericUpDown staleTimeoutBox = new();
+    private readonly TextBox quickCommandsBox = new();
+    private readonly CheckBox startupCommandsBox = new();
+    private readonly NumericUpDown startupDelayBox = new();
+    private readonly TextBox startupCommandsText = new();
     private readonly ServerProfile? existing;
 
     public ServerDialog(ServerProfile? server)
@@ -137,7 +141,7 @@ internal sealed class ServerDialog : Form
         Text = server is null ? "Add server" : "Edit server";
         ClientSize = new Size(500, 700);
         AutoScroll = true;
-        AutoScrollMinSize = new Size(480, 800);
+        AutoScrollMinSize = new Size(480, 1110);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
@@ -156,7 +160,7 @@ internal sealed class ServerDialog : Form
         portBox.ThousandsSeparator = false;
         Label portHelp = new()
         {
-            Text = "0 = automatic SRV lookup, then default 25565",
+            Text = "0 = automatic SRV lookup, then 25565",
             ForeColor = Theme.Muted,
             Location = new Point(190, 151),
             Size = new Size(285, 20)
@@ -184,7 +188,14 @@ internal sealed class ServerDialog : Form
         ConfigureNumeric("Reconnect initial", reconnectInitialBox, 530, 1, 300, "seconds");
         ConfigureNumeric("Reconnect maximum", reconnectMaximumBox, 580, 1, 3600, "seconds");
         ConfigureNumeric("Reconnect attempts", reconnectAttemptsBox, 630, 0, 9999, "0 = unlimited");
-        ConfigureNumeric("Stale timeout", staleTimeoutBox, 680, 60, 900, "seconds without packets");
+        ConfigureNumeric("Stale timeout", staleTimeoutBox, 680, 60, 900, "seconds idle");
+        ConfigureMultiline("Quick commands", quickCommandsBox, 730, 78,
+            "One per line; clicking a generated button sends it once (max 12)");
+        ConfigureCheckBox(startupCommandsBox, "Run startup commands on connect (opt-in)", 850);
+        ConfigureNumeric("Startup delay", startupDelayBox, 886, 500, 30000, "milliseconds");
+        startupDelayBox.Increment = 500;
+        ConfigureMultiline("Startup commands", startupCommandsText, 936, 78,
+            "One per line, max 8; no repeat loop or automatic registration");
         afkBox.Checked = true;
         reconnectBox.Checked = true;
         respawnBox.Checked = true;
@@ -194,6 +205,7 @@ internal sealed class ServerDialog : Form
         reconnectInitialBox.Value = 5;
         reconnectMaximumBox.Value = 60;
         staleTimeoutBox.Value = 120;
+        startupDelayBox.Value = 1000;
         versionBox.Text = "auto";
         if (server is not null)
         {
@@ -212,13 +224,17 @@ internal sealed class ServerDialog : Form
             reconnectMaximumBox.Value = Math.Clamp(server.ReconnectMaximumDelaySeconds, 1, 3600);
             reconnectAttemptsBox.Value = Math.Clamp(server.ReconnectMaximumAttempts, 0, 9999);
             staleTimeoutBox.Value = Math.Clamp(server.StaleConnectionTimeoutSeconds, 60, 900);
+            quickCommandsBox.Text = string.Join(Environment.NewLine, server.QuickCommands);
+            startupCommandsBox.Checked = server.StartupCommandsEnabled;
+            startupDelayBox.Value = Math.Clamp(server.StartupCommandDelayMilliseconds, 500, 30000);
+            startupCommandsText.Text = string.Join(Environment.NewLine, server.StartupCommands);
         }
 
         Button save = Theme.Button("Save", 90);
-        save.Location = new Point(290, 742);
+        save.Location = new Point(290, 1044);
         Theme.Primary(save);
         Button cancel = Theme.Button("Cancel", 90);
-        cancel.Location = new Point(388, 742);
+        cancel.Location = new Point(388, 1044);
         cancel.DialogResult = DialogResult.Cancel;
         save.Click += SaveClicked;
         Controls.Add(save);
@@ -274,6 +290,26 @@ internal sealed class ServerDialog : Form
         Controls.Add(help);
     }
 
+    private void ConfigureMultiline(string caption, TextBox control, int top, int height, string helpText)
+    {
+        Label label = new() { Text = caption, Location = new Point(20, top + 4), Size = new Size(165, 25) };
+        control.Location = new Point(190, top);
+        control.Size = new Size(288, height);
+        control.Multiline = true;
+        control.ScrollBars = ScrollBars.Vertical;
+        Theme.Input(control);
+        Label help = new()
+        {
+            Text = helpText,
+            Location = new Point(190, top + height + 3),
+            Size = new Size(288, 34),
+            ForeColor = Theme.Muted
+        };
+        Controls.Add(label);
+        Controls.Add(control);
+        Controls.Add(help);
+    }
+
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {
         try
@@ -304,15 +340,32 @@ internal sealed class ServerDialog : Form
                 ReconnectMaximumDelaySeconds = decimal.ToInt32(reconnectMaximumBox.Value),
                 ReconnectMaximumAttempts = decimal.ToInt32(reconnectAttemptsBox.Value),
                 StaleConnectionTimeoutSeconds = decimal.ToInt32(staleTimeoutBox.Value),
-                AutoRespawn = respawnBox.Checked
+                AutoRespawn = respawnBox.Checked,
+                QuickCommands = ParseCommands(quickCommandsBox.Text, 12),
+                StartupCommandsEnabled = startupCommandsBox.Checked,
+                StartupCommandDelayMilliseconds = decimal.ToInt32(startupDelayBox.Value),
+                StartupCommands = ParseCommands(startupCommandsText.Text, 8, rejectSensitive: true)
             };
             DialogResult = DialogResult.OK;
             Close();
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            BrandMessageBox.Show(this, exception.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    private static List<string> ParseCommands(string text, int maximum, bool rejectSensitive = false)
+    {
+        List<string> commands = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(command => command.Length <= 256)
+            .Take(maximum)
+            .ToList();
+        if (commands.Any(command => !command.StartsWith("/", StringComparison.Ordinal)))
+            throw new FormatException("Quick and startup commands must start with '/'.");
+        if (rejectSensitive && commands.Any(SensitiveDataRedactor.IsSensitiveCommand))
+            throw new FormatException("Login, registration and password commands cannot run automatically. Send them manually instead.");
+        return commands;
     }
 }
 
@@ -328,13 +381,15 @@ internal sealed class SettingsDialog : Form
     private readonly CheckBox mention = new();
     private readonly CheckBox privateMessage = new();
     private readonly ComboBox retention = new();
+    private readonly CheckBox restoreSessions = new();
+    private readonly CheckBox protocolInspector = new();
 
     public SettingsDialog(ApplicationSettings settings)
     {
         existing = settings;
         Text = "OeXYZ settings";
-        ClientSize = new Size(540, 500);
-        MinimumSize = new Size(520, 480);
+        ClientSize = new Size(680, 570);
+        MinimumSize = new Size(620, 480);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
@@ -350,12 +405,12 @@ internal sealed class SettingsDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 12,
+            RowCount = 14,
             Padding = new Padding(24, 20, 24, 18),
             BackColor = Theme.Background
         };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        for (int index = 1; index < 10; index++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        for (int index = 1; index < 12; index++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
@@ -370,6 +425,10 @@ internal sealed class SettingsDialog : Form
         AddCheck(layout, death, "Notify when the player dies", 6, settings.NotifyDeath);
         AddCheck(layout, mention, "Notify when the player name is mentioned", 7, settings.NotifyMention);
         AddCheck(layout, privateMessage, "Notify for recognized private messages", 8, settings.NotifyPrivateMessage);
+        AddCheck(layout, restoreSessions, "Restore the previous sessions automatically on startup (opt-in)", 9,
+            settings.RestoreSessionsOnStartup);
+        AddCheck(layout, protocolInspector, "Developer protocol inspector for newly opened sessions", 10,
+            settings.ProtocolInspectorEnabled);
 
         FlowLayoutPanel retentionRow = new()
         {
@@ -380,8 +439,8 @@ internal sealed class SettingsDialog : Form
         };
         Label retentionLabel = new()
         {
-            Text = "Keep logs:",
-            Width = 110,
+            Text = "Keep logs (max 300 MB):",
+            Width = 180,
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Theme.Ink
         };
@@ -392,16 +451,18 @@ internal sealed class SettingsDialog : Form
         Theme.Input(retention);
         retentionRow.Controls.Add(retentionLabel);
         retentionRow.Controls.Add(retention);
-        layout.Controls.Add(retentionRow, 0, 9);
+        layout.Controls.Add(retentionRow, 0, 11);
 
         Label explanation = new()
         {
             Dock = DockStyle.Fill,
             Text = "Closing only continues in the tray when you explicitly enable it. " +
+                   "Notification event preferences can be selected while notifications are off. " +
+                   "The oldest closed logs are removed automatically above 300 MB. " +
                    "Exit from the tray menu always shuts down sessions cleanly.",
             ForeColor = Theme.Muted
         };
-        layout.Controls.Add(explanation, 0, 10);
+        layout.Controls.Add(explanation, 0, 12);
 
         FlowLayoutPanel actions = new()
         {
@@ -417,13 +478,11 @@ internal sealed class SettingsDialog : Form
         save.Click += (_, _) => Save();
         actions.Controls.Add(cancel);
         actions.Controls.Add(save);
-        layout.Controls.Add(actions, 0, 11);
+        layout.Controls.Add(actions, 0, 13);
         Controls.Add(layout);
         AcceptButton = save;
         CancelButton = cancel;
 
-        notifications.CheckedChanged += (_, _) => UpdateNotificationControls();
-        UpdateNotificationControls();
     }
 
     public ApplicationSettings? Result { get; private set; }
@@ -442,12 +501,6 @@ internal sealed class SettingsDialog : Form
         layout.Controls.Add(checkBox, 0, row);
     }
 
-    private void UpdateNotificationControls()
-    {
-        foreach (CheckBox child in new[] { disconnect, reconnect, death, mention, privateMessage })
-            child.Enabled = notifications.Checked;
-    }
-
     private void Save()
     {
         Result = existing with
@@ -460,6 +513,8 @@ internal sealed class SettingsDialog : Form
             NotifyDeath = death.Checked,
             NotifyMention = mention.Checked,
             NotifyPrivateMessage = privateMessage.Checked,
+            RestoreSessionsOnStartup = restoreSessions.Checked,
+            ProtocolInspectorEnabled = protocolInspector.Checked,
             LogRetentionDays = retention.SelectedIndex switch { 0 => 30, 2 => 0, _ => 90 }
         };
         DialogResult = DialogResult.OK;

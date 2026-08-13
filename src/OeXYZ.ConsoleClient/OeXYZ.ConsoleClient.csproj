@@ -8,12 +8,13 @@
     <ApplicationIcon>..\..\assets\oexyz.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.1.1</Version>
+    <Version>1.2.0</Version>
     <Authors>OeXYZ contributors</Authors>
     <Product>OeXYZ Console Client</Product>
     <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>
@@ -24,8 +25,15 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
+    <ProjectReference Include="..\OeXYZ.Authentication\OeXYZ.Authentication.csproj" />
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
+    <ProjectReference Include="..\OeXYZ.Session\OeXYZ.Session.csproj" />
     <ProjectReference Include="..\OeXYZ.Updater\OeXYZ.Updater.csproj" />
-    <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\fonts\Inter-VariableFont_opsz,wght.ttf"
+                      LogicalName="OeXYZ.Fonts.Inter.Variable.ttf" />
+    <EmbeddedResource Include="..\..\assets\fonts\Inter-Italic-VariableFont_opsz,wght.ttf"
+                      LogicalName="OeXYZ.Fonts.Inter.Italic.Variable.ttf" />
   </ItemGroup>
 </Project>

@@ -3,5 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>OeXYZ.Core</AssemblyName>
     <RootNamespace>OeXYZ.Core</RootNamespace>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>
