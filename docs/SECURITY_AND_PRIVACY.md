@@ -77,7 +77,9 @@ file; it cannot protect against software already executing as the same user.
 - Protocol inspection is disabled by default and records packet metadata only,
   never hexadecimal/raw payloads that could contain tokens or private chat.
 - SHA-256 checks detect release corruption or mismatched assets but do not
-  replace the trust placed in the configured GitHub repository and its owners.
+  replace trust in the official GitHub repository and its owners. Release
+  builds pin that repository and ignore repository overrides supplied through
+  the process environment.
 
 ## Removing data
 

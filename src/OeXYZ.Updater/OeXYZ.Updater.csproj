@@ -5,4 +5,7 @@
     <RootNamespace>OeXYZ.Updater</RootNamespace>
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OeXYZ.ConsoleClient.Tests" />
+  </ItemGroup>
 </Project>

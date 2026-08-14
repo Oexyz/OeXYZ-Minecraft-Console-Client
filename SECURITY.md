@@ -28,9 +28,10 @@ unless they are strictly necessary to reproduce the problem.
 - Refreshable account sessions are encrypted with Windows DPAPI for the
   current Windows user in `%LOCALAPPDATA%\OeXYZ\ConsoleClient\accounts.bin`.
 - Profiles and logs remain local. There is no telemetry or analytics endpoint.
-- The updater only accepts an HTTPS `github.com` repository, selects the
-  running x64/ARM64 architecture, and verifies the release ZIP against its
-  SHA-256 manifest before bounded extraction.
+- Official Release builds pin updates to
+  `Oexyz/OeXYZ-Minecraft-Console-Client`, select the running x64/ARM64
+  architecture, and verify the release ZIP against its SHA-256 manifest before
+  bounded extraction. Repository overrides are available only in Debug builds.
 - An invalid/missing checksum, oversized archive, unsafe ZIP path, or missing
   frontend stops the update. Installation requires confirmation, retains a
   rollback backup, and attempts rollback if replacement fails.

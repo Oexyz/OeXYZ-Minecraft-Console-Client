@@ -41,8 +41,8 @@ Download the archive matching your Windows computer from the
 
 | System | Release asset |
 |---|---|
-| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.2.0-win-x64.zip` |
-| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.2.0-win-arm64.zip` |
+| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.2.1-win-x64.zip` |
+| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.2.1-win-arm64.zip` |
 
 Each archive contains exactly `OeXYZ Console Client.exe` for the GUI and
 `oexyz.exe` for terminal/headless use, plus documentation. The executables do

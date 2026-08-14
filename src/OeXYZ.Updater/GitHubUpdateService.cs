@@ -24,6 +24,7 @@ public sealed record UpdateCheckResult(
 
 public static class GitHubUpdateService
 {
+    private const string OfficialRepository = "Oexyz/OeXYZ-Minecraft-Console-Client";
     private const string LegacyX64AssetName = "OeXYZ-Console-Client-win-x64.zip";
     private const string ChecksumsAssetName = "SHA256SUMS";
     private const long MaximumReleaseBytes = 500L * 1024 * 1024;
@@ -142,12 +143,29 @@ public static class GitHubUpdateService
 
     private static (string Owner, string Repository) ResolveRepository()
     {
-        string? configured = Environment.GetEnvironmentVariable("OEXYZ_UPDATE_REPOSITORY");
+        string? configured = null;
+#if DEBUG
+        configured = Environment.GetEnvironmentVariable("OEXYZ_UPDATE_REPOSITORY");
         configured ??= Assembly.GetEntryAssembly()?
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(attribute => string.Equals(attribute.Key, "RepositoryUrl", StringComparison.Ordinal))?
             .Value;
-        if (string.IsNullOrWhiteSpace(configured)) throw new UpdateSourceNotConfiguredException();
+#endif
+        return ResolveRepositoryForTesting(configured, allowOverride: IsDebugBuild);
+    }
+
+    internal static (string Owner, string Repository) ResolveRepositoryForTesting(
+        string? configured,
+        bool allowOverride)
+    {
+        string trustedRepository = allowOverride && !string.IsNullOrWhiteSpace(configured)
+            ? configured
+            : OfficialRepository;
+        return ParseRepository(trustedRepository);
+    }
+
+    private static (string Owner, string Repository) ParseRepository(string configured)
+    {
         configured = configured.Trim().TrimEnd('/');
         if (Uri.TryCreate(configured, UriKind.Absolute, out Uri? repositoryUri))
         {
@@ -162,6 +180,13 @@ public static class GitHubUpdateService
             throw new InvalidDataException("The update repository must have the form owner/repository.");
         return (parts[0], parts[1]);
     }
+
+    private const bool IsDebugBuild =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
 
     private static Version ParseVersion(string tag)
     {

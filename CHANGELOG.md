@@ -5,6 +5,17 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-14
+
+### Security
+
+- Official Release builds now pin update checks to
+  `Oexyz/OeXYZ-Minecraft-Console-Client` and ignore the
+  `OEXYZ_UPDATE_REPOSITORY` process environment variable. Repository overrides
+  remain available only in Debug builds for maintainers testing forks.
+- Added deterministic regression coverage proving a forged repository override
+  cannot change the trusted Release update source.
+
 ## [1.2.0] - 2026-08-14
 
 ### Added

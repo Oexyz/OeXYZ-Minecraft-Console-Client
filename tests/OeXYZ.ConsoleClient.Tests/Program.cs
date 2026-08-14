@@ -85,6 +85,27 @@ await RunAsync("checksum mismatch is rejected", async () =>
     }
 });
 
+Run("release update source ignores repository override", () =>
+{
+    (string owner, string repository) = GitHubUpdateService.ResolveRepositoryForTesting(
+        "Attacker/FakeRepo",
+        allowOverride: false);
+    StringEqual("Oexyz", owner);
+    StringEqual("OeXYZ-Minecraft-Console-Client", repository);
+});
+
+Run("debug update source validates repository override", () =>
+{
+    (string owner, string repository) = GitHubUpdateService.ResolveRepositoryForTesting(
+        "https://github.com/Example/OeXYZ-Fork",
+        allowOverride: true);
+    StringEqual("Example", owner);
+    StringEqual("OeXYZ-Fork", repository);
+    Throws<InvalidDataException>(() => GitHubUpdateService.ResolveRepositoryForTesting(
+        "https://example.invalid/Attacker/FakeRepo",
+        allowOverride: true));
+});
+
 Run("update staging rejects path traversal", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), $"oexyz-updater-traversal-{Guid.NewGuid():N}");
@@ -209,6 +230,12 @@ static async Task ThrowsAsync<TException>(Func<Task> action) where TException : 
         return;
     }
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static void StringEqual(string expected, string actual)
+{
+    if (!string.Equals(expected, actual, StringComparison.Ordinal))
+        throw new InvalidOperationException($"Expected '{expected}', got '{actual}'.");
 }
 
 static void Throws<TException>(Action action) where TException : Exception

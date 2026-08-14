@@ -8,7 +8,8 @@ Control policy.
 
 The user-triggered updater:
 
-1. reads the latest GitHub Release over HTTPS;
+1. reads the latest GitHub Release over HTTPS from the pinned official
+   `Oexyz/OeXYZ-Minecraft-Console-Client` repository;
 2. selects `win-x64` or `win-arm64` from the running process architecture;
 3. downloads the archive and checksum manifest with size limits;
 4. compares SHA-256 using a fixed-time comparison;
@@ -23,6 +24,12 @@ GitHub attestations are verified independently with `gh attestation verify` as
 shown in the README. The application does not require or silently invoke the
 GitHub CLI on end-user machines.
 
-The deterministic updater suite covers version normalization, successful and
-rejected hashes, Windows temporary-file lifetime, ZIP traversal rejection, and
-replacement with rollback copies.
+Official Release builds ignore `OEXYZ_UPDATE_REPOSITORY`. This prevents a
+locally injected process environment from redirecting the updater to a
+different GitHub owner whose archive and checksum agree with each other. The
+override remains available only in Debug builds for maintainers testing a fork.
+
+The deterministic updater suite covers version normalization, release-source
+pinning, Debug override validation, successful and rejected hashes, Windows
+temporary-file lifetime, ZIP traversal rejection, and replacement with rollback
+copies.
