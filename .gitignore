@@ -27,3 +27,5 @@ appsettings.local.json
 accounts.json
 sessions.json
 updates.json
+/docker/
+*.key

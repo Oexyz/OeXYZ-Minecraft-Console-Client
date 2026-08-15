@@ -1,0 +1,7 @@
+services:
+  oexyz:
+    pull_policy: never
+    build:
+      context: .
+      args:
+        VERSION: ${OEXYZ_VERSION:-1.3.0}

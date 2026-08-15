@@ -1,0 +1,36 @@
+services:
+  oexyz:
+    image: ${OEXYZ_IMAGE:-ghcr.io/oexyz/oexyz-minecraft-console-client:latest}
+    pull_policy: always
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      OEXYZ_ACCOUNT: ${OEXYZ_ACCOUNT:-}
+      OEXYZ_GROUP: ${OEXYZ_GROUP:-}
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - oexyz-config:/config
+      - oexyz-state:/state
+      - oexyz-keys:/keys
+    command:
+      - supervise
+      - --config
+      - /config/profiles.json
+      - --no-input
+      - --account-key-file
+      - /keys/account.key
+      - --health-port
+      - "8765"
+      - --max-sessions
+      - "16"
+
+volumes:
+  oexyz-config:
+  oexyz-state:
+  oexyz-keys:

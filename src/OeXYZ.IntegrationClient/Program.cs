@@ -1,3 +1,4 @@
+using OeXYZ.Core;
 using OeXYZ.Protocol;
 
 if (string.Equals(args.ElementAtOrDefault(0), "--status", StringComparison.OrdinalIgnoreCase))
@@ -5,8 +6,8 @@ if (string.Equals(args.ElementAtOrDefault(0), "--status", StringComparison.Ordin
     string statusAddress = args.ElementAtOrDefault(1) ?? "127.0.0.1";
     int statusPort = int.TryParse(args.ElementAtOrDefault(2), out int requestedPort) ? requestedPort : 0;
     MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(statusAddress, statusPort);
-    Console.WriteLine($"STATUS={status.VersionName};PROTOCOL={status.ProtocolVersion};PLAYERS={status.PlayersOnline}/{status.PlayersMaximum}");
-    Console.WriteLine($"ENDPOINT={status.Address.NetworkHost}:{status.Address.Port};SRV={status.Address.UsedSrv}");
+    WriteSafeOutput($"STATUS={status.VersionName};PROTOCOL={status.ProtocolVersion};PLAYERS={status.PlayersOnline}/{status.PlayersMaximum}");
+    WriteSafeOutput($"ENDPOINT={status.Address.NetworkHost}:{status.Address.Port};SRV={status.Address.UsedSrv}");
     return;
 }
 
@@ -40,14 +41,14 @@ ProtocolDefinition protocol = requestedProtocol is int protocolNumber
     ? catalog.Resolve(protocolNumber)
     : catalog.Resolve(requestedVersion);
 ServerAddress endpoint = resolveSrv
-    ? ServerAddress.Parse(host).ResolveSrv()
+    ? await ServerAddress.Parse(host).ResolveSrvAsync()
     : ServerAddress.Parse(host, port);
 await using MinecraftConnection client = new(endpoint, MinecraftIdentity.Offline(username), protocol);
-client.Log += line => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {line}");
-client.StateChanged += state => Console.WriteLine($"STATE={state}");
+client.Log += line => WriteSafeOutput($"[{DateTime.Now:HH:mm:ss}] {line}");
+client.StateChanged += state => WriteSafeOutput($"STATE={state}");
 client.PositionChanged += value =>
 {
-    Console.WriteLine(FormattableString.Invariant($"POSITION={value.X:F2},{value.Y:F2},{value.Z:F2}"));
+    WriteSafeOutput(FormattableString.Invariant($"POSITION={value.X:F2},{value.Y:F2},{value.Z:F2}"));
     positioned.TrySetResult();
     if (deathObserved) returned.TrySetResult();
 };
@@ -58,30 +59,30 @@ client.Died += () =>
 };
 client.HealthChanged += (health, food) =>
 {
-    Console.WriteLine($"HEALTH={health:F1} FOOD={food}");
+    WriteSafeOutput($"HEALTH={health:F1} FOOD={food}");
     if (health <= 0)
     {
         deathObserved = true;
         died.TrySetResult();
     }
 };
-client.ChatReceived += line => Console.WriteLine($"CHAT={line.Text}");
-client.PlayerListChanged += players => Console.WriteLine(
+client.ChatReceived += line => WriteSafeOutput($"CHAT={line.Text}");
+client.PlayerListChanged += players => WriteSafeOutput(
     $"PLAYERS={players.Count};NAMES={string.Join(',', players.Select(player => player.Name))}");
 client.MetricsChanged += metrics =>
 {
     if (metrics.PacketsReceived % 100 == 0 && metrics.PacketsReceived > 0)
-        Console.WriteLine($"METRICS=RX:{metrics.BytesReceived}/{metrics.PacketsReceived};TX:{metrics.BytesSent}/{metrics.PacketsSent};PING:{metrics.PingMilliseconds}");
+        WriteSafeOutput($"METRICS=RX:{metrics.BytesReceived}/{metrics.PacketsReceived};TX:{metrics.BytesSent}/{metrics.PacketsSent};PING:{metrics.PingMilliseconds}");
 };
-if (tracePackets) client.PacketObserved += (state, id, length) => Console.WriteLine($"PACKET={state}:0x{id:X2}:{length}");
-if (tracePackets) client.ConnectionFaulted += exception => Console.WriteLine(exception);
+if (tracePackets) client.PacketObserved += (state, id, length) => WriteSafeOutput($"PACKET={state}:0x{id:X2}:{length}");
+if (tracePackets) client.ConnectionFaulted += exception => WriteSafeOutput(exception.ToString());
 
 using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(45));
 await client.ConnectAsync(timeout.Token);
 Console.WriteLine("PLAY_READY");
 if (observeOnly)
 {
-    Console.WriteLine($"OBSERVING_AS={username}");
+    WriteSafeOutput($"OBSERVING_AS={username}");
     await Task.WhenAny(client.Completion, Task.Delay(TimeSpan.FromSeconds(12), timeout.Token));
     Console.WriteLine(client.State == ConnectionState.Play
         ? "PUBLIC_PLAY_REACHED_AND_STILL_CONNECTED"
@@ -113,3 +114,9 @@ else
     await Task.Delay(TimeSpan.FromSeconds(waitSeconds), timeout.Token);
 }
 Console.WriteLine("INTEGRATION_OK");
+
+static void WriteSafeOutput(string? value)
+{
+    string terminalSafe = TerminalTextSanitizer.Sanitize(value);
+    Console.WriteLine(SensitiveDataRedactor.RedactText(terminalSafe));
+}

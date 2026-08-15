@@ -1,7 +1,6 @@
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 using OeXYZ.Session;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -11,8 +10,9 @@ internal sealed class SessionTab : TabPage
 {
     private const int MaximumLines = 5000;
     private const int TrimLines = 1000;
+    internal const int MaximumPendingLines = 1024;
     private readonly ConsoleSession session;
-    private readonly ConcurrentQueue<SessionLine> pending = new();
+    private readonly BoundedDropOldestQueue<SessionLine> pending = new(MaximumPendingLines);
     private readonly List<SessionLine> lines = [];
     private readonly CommandHistory commandHistory = new(200);
     private readonly Dictionary<FontStyle, Font> chatFonts = [];
@@ -437,7 +437,7 @@ internal sealed class SessionTab : TabPage
         SendMessage(output.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
         try
         {
-            while (drained < 300 && pending.TryDequeue(out SessionLine? line))
+            while (drained < 300 && pending.TryDequeue(out SessionLine line))
             {
                 lines.Add(line);
                 if (MatchesFilter(line)) AppendLine(line);
@@ -651,7 +651,7 @@ internal sealed class SessionTab : TabPage
     private void ClearOutput()
     {
         lines.Clear();
-        while (pending.TryDequeue(out _)) { }
+        pending.Clear();
         output.Clear();
         lineCount = 0;
     }

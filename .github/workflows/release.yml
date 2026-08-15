@@ -9,9 +9,46 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  packages: write
 
 jobs:
-  publish:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - name: Validate and classify release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Release tags must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease." >&2
+            exit 64
+          fi
+          version="${tag#v}"
+          prerelease=false
+          case "$version" in
+            *-*)
+              prerelease=true
+              prerelease_ids="${version#*-}"
+              IFS='.' read -r -a identifiers <<< "$prerelease_ids"
+              for identifier in "${identifiers[@]}"; do
+                if [[ "$identifier" =~ ^[0-9]+$ && "$identifier" != 0 && "$identifier" == 0* ]]; then
+                  echo "Numeric prerelease identifiers must not contain leading zeroes." >&2
+                  exit 64
+                fi
+              done
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: metadata
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -31,7 +68,7 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Verify generated sources and tests
+      - name: Verify generated sources and deterministic tests
         shell: pwsh
         run: |
           npm ci --ignore-scripts
@@ -43,23 +80,40 @@ jobs:
           dotnet run --project tests/OeXYZ.Protocol.Tests -c Release --no-build
           dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
           dotnet run --project tests/OeXYZ.Session.Tests -c Release --no-build
+          dotnet run --project tests/OeXYZ.Authentication.Tests -c Release --no-build
+          dotnet run --project tests/OeXYZ.Cli.Tests -c Release --no-build
 
-      - name: Build architecture release archives
+  windows:
+    needs: [metadata, verify]
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Build Windows release archives and SBOM
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $version = '${{ needs.metadata.outputs.version }}'
+          dotnet restore OeXYZ.ConsoleClient.slnx --locked-mode
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          $hashes = @()
           foreach ($runtime in @('win-x64','win-arm64')) {
             $gui = Join-Path $PWD "artifacts/$runtime/gui"
             $cli = Join-Path $PWD "artifacts/$runtime/cli"
             $stage = Join-Path $PWD "artifacts/$runtime/stage"
             New-Item -ItemType Directory -Path $gui,$cli,$stage -Force | Out-Null
             dotnet publish src/OeXYZ.ConsoleClient/OeXYZ.ConsoleClient.csproj `
-              -c Release -r $runtime --self-contained true -p:Version=$version `
+              -c Release -r $runtime --self-contained true --no-restore -p:Version=$version `
               -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $gui
             dotnet publish src/OeXYZ.Cli/OeXYZ.Cli.csproj `
-              -c Release -r $runtime --self-contained true -p:Version=$version `
+              -c Release -r $runtime --self-contained true --no-restore -p:Version=$version `
               -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o $cli
             if (@(Get-ChildItem $gui -File).Count -ne 1 -or @(Get-ChildItem $cli -File).Count -ne 1) {
               throw "Publish for $runtime was not one executable per frontend."
@@ -68,30 +122,247 @@ jobs:
             Copy-Item LICENSE,THIRD_PARTY_NOTICES.md,README.md -Destination $stage
             $docs = Join-Path $stage 'docs'
             New-Item -ItemType Directory -Path $docs -Force | Out-Null
-            Copy-Item docs/CLI.md,docs/SECURITY_AND_PRIVACY.md,docs/UPDATER.md -Destination $docs
+            Copy-Item docs/CLI.md,docs/ARCHITECTURE.md,docs/SECURITY_AND_PRIVACY.md,docs/UPDATER.md -Destination $docs
             $name = "OeXYZ-Minecraft-Console-Client-v$version-$runtime.zip"
-            $archive = Join-Path $PWD "artifacts/$name"
-            Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
-            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToUpperInvariant()
-            $hashes += "$hash  $name"
+            Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $PWD "artifacts/$name") -CompressionLevel Optimal
           }
-          $hashes | Set-Content -LiteralPath artifacts/SHA256SUMS -Encoding ascii
+          ./scripts/New-Sbom.ps1 -OutputPath "artifacts/OeXYZ-Minecraft-Console-Client-v$version.cdx.json" -Version $version
 
-      - name: Attest release archive
+      - name: Attest Windows archives and SBOM
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: artifacts/OeXYZ-Minecraft-Console-Client-*.zip
+          subject-path: |
+            artifacts/OeXYZ-Minecraft-Console-Client-*.zip
+            artifacts/OeXYZ-Minecraft-Console-Client-*.cdx.json
 
-      - name: Publish GitHub release
-        shell: pwsh
+      - name: Upload Windows release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows
+          path: |
+            artifacts/OeXYZ-Minecraft-Console-Client-*.zip
+            artifacts/OeXYZ-Minecraft-Console-Client-*.cdx.json
+          if-no-files-found: error
+
+  linux:
+    needs: [metadata, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Build Linux x64 and ARM64 release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.metadata.outputs.version }}"
+          sh tests/install-systemd.sh
+          dotnet restore src/OeXYZ.Cli/OeXYZ.Cli.csproj --locked-mode
+          mkdir -p artifacts
+          for runtime in linux-x64 linux-arm64; do
+            output="artifacts/$runtime/publish"
+            stage="artifacts/$runtime/stage"
+            dotnet publish src/OeXYZ.Cli/OeXYZ.Cli.csproj \
+              -c Release -r "$runtime" --self-contained true --no-restore \
+              -p:Version="$version" -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o "$output"
+            test "$(find "$output" -maxdepth 1 -type f | wc -l)" -eq 1
+            install -Dm755 "$output/oexyz" "$stage/oexyz"
+            install -Dm644 LICENSE "$stage/LICENSE"
+            install -Dm644 THIRD_PARTY_NOTICES.md "$stage/THIRD_PARTY_NOTICES.md"
+            install -Dm644 README.md "$stage/README.md"
+            install -Dm644 docs/CLI.md "$stage/docs/CLI.md"
+            install -Dm644 docs/ARCHITECTURE.md "$stage/docs/ARCHITECTURE.md"
+            install -Dm644 docs/SECURITY_AND_PRIVACY.md "$stage/docs/SECURITY_AND_PRIVACY.md"
+            install -Dm644 assets/systemd/oexyz.service "$stage/share/systemd/user/oexyz.service"
+            archive="artifacts/OeXYZ-Minecraft-Console-Client-v$version-$runtime.tar.gz"
+            tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -C "$stage" -cf - . | gzip -n > "$archive"
+          done
+          artifacts/linux-x64/publish/oexyz --help
+          install -Dm755 install.sh artifacts/install.sh
+
+      - name: Attest Linux archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/OeXYZ-Minecraft-Console-Client-*.tar.gz
+
+      - name: Upload Linux release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-linux
+          path: |
+            artifacts/OeXYZ-Minecraft-Console-Client-*.tar.gz
+            artifacts/install.sh
+          if-no-files-found: error
+
+  container:
+    needs: [metadata, verify, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          driver: docker-container
+
+      - name: Log in to GitHub Container Registry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish non-root AMD64 and ARM64 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.metadata.outputs.version }}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION="$version" \
+            --build-arg SOURCE_COMMIT="$GITHUB_SHA" \
+            --provenance=mode=max --sbom=true --push \
+            --tag "$image:$version" .
+
+      - name: Verify the container is publicly pullable
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.metadata.outputs.version }}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          anonymous_config="$(mktemp -d)"
+          cleanup() {
+            docker image rm "$image:$version" >/dev/null 2>&1 || true
+            rm -rf -- "$anonymous_config"
+          }
+          trap cleanup EXIT
+
+          public=0
+          for attempt in $(seq 1 12); do
+            if manifest="$(DOCKER_CONFIG="$anonymous_config" \
+                timeout 15s docker buildx imagetools inspect "$image:$version" 2>/dev/null)" \
+                && grep -q 'Platform:.*linux/amd64' <<<"$manifest" \
+                && grep -q 'Platform:.*linux/arm64' <<<"$manifest"; then
+              public=1
+              break
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+
+          if [ "$public" -ne 1 ]; then
+            echo "::error::The versioned AMD64/ARM64 GHCR image is not anonymously pullable. Set the package visibility to Public and rerun this job."
+            exit 1
+          fi
+
+          for platform_and_arch in "linux/amd64 amd64" "linux/arm64 arm64"; do
+            read -r platform expected_architecture <<<"$platform_and_arch"
+            DOCKER_CONFIG="$anonymous_config" timeout 60s \
+              docker pull --quiet --platform "$platform" "$image:$version" >/dev/null
+            actual_architecture="$(docker image inspect "$image:$version" \
+              --format '{{.Architecture}}')"
+            if [ "$actual_architecture" != "$expected_architecture" ]; then
+              echo "::error::Expected $platform but the anonymously pulled image reports $actual_architecture."
+              exit 1
+            fi
+            docker image rm "$image:$version" >/dev/null
+          done
+
+  release:
+    needs: [metadata, windows, linux, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download verified release files
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create checksums and publish GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $archives = Get-ChildItem artifacts/OeXYZ-Minecraft-Console-Client-*.zip |
-            ForEach-Object FullName
-          gh release create '${{ github.ref_name }}' `
-            @archives `
-            artifacts/SHA256SUMS `
-            --verify-tag `
-            --generate-notes `
-            --title "OeXYZ ${{ github.ref_name }}"
+          set -euo pipefail
+          cd artifacts
+          sha256sum OeXYZ-Minecraft-Console-Client-* install.sh > SHA256SUMS
+          release_flags=()
+          if [ "${{ needs.metadata.outputs.prerelease }}" = true ]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "${{ github.ref_name }}" \
+            OeXYZ-Minecraft-Console-Client-* install.sh SHA256SUMS \
+            --repo "${{ github.repository }}" --verify-tag --generate-notes \
+            --title "OeXYZ ${{ github.ref_name }}" "${release_flags[@]}"
+
+  container-latest:
+    needs: [metadata, release]
+    if: needs.metadata.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: oexyz-container-latest
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          driver: docker-container
+
+      - name: Log in to GitHub Container Registry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Promote only the newest stable image to latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.metadata.outputs.version }}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          newest_stable="$(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+              | sed -E 's/^v//' \
+              | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+              | sort -V \
+              | tail -n 1
+          )"
+
+          if [ "$newest_stable" != "$version" ]; then
+            echo "Skipping latest: $version is not the newest stable release ($newest_stable)."
+            exit 0
+          fi
+
+          docker buildx imagetools create \
+            --tag "$image:latest" "$image:$version"
+
+          anonymous_config="$(mktemp -d)"
+          cleanup() {
+            docker image rm "$image:latest" >/dev/null 2>&1 || true
+            rm -rf -- "$anonymous_config"
+          }
+          trap cleanup EXIT
+          manifest="$(DOCKER_CONFIG="$anonymous_config" timeout 30s \
+            docker buildx imagetools inspect "$image:latest")"
+          grep -q 'Platform:.*linux/amd64' <<<"$manifest"
+          grep -q 'Platform:.*linux/arm64' <<<"$manifest"
+          DOCKER_CONFIG="$anonymous_config" timeout 60s \
+            docker pull --quiet --platform linux/amd64 "$image:latest" >/dev/null
+          test "$(docker image inspect "$image:latest" --format '{{.Architecture}}')" = amd64

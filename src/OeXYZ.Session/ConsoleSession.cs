@@ -59,23 +59,31 @@ public sealed record SessionSnapshot(
 
 public sealed class ConsoleSession : IAsyncDisposable
 {
+    private const long MaximumSessionLogBytes = 16L * 1024L * 1024L;
+    internal const int MaximumPendingLogLines = 1024;
+    internal const int MaximumRecentDiagnosticLines = 200;
+    internal const int MaximumRecentDiagnosticCharacters = 128 * 1024;
     private readonly AccountProfile account;
     private readonly ServerProfile server;
     private readonly IIdentityProvider authentication;
     private readonly Action profilesChanged;
+    private readonly string logBasePath;
+    private readonly Func<string, long, RotatingLogWriter> logWriterFactory;
     private readonly ProtocolCatalog catalog = ProtocolCatalog.LoadEmbedded();
     private readonly CancellationTokenSource lifetime = new();
     private readonly object stateLock = new();
+    private readonly object diagnosticsLock = new();
     private readonly Channel<SessionLine> logLines = Channel.CreateBounded<SessionLine>(
-        new BoundedChannelOptions(8192)
+        new BoundedChannelOptions(MaximumPendingLogLines)
         {
             SingleReader = true,
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
     private readonly Task logTask;
-    private readonly ConcurrentQueue<string> recentDiagnostics = new();
+    private readonly Queue<string> recentDiagnostics = new();
     private readonly ConcurrentDictionary<string, long> unknownPacketStatistics = new();
+    private int recentDiagnosticCharacters;
     private MinecraftConnection? connection;
     private MinecraftIdentity? identity;
     private Task? runTask;
@@ -94,6 +102,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     private int dead;
     private int stopping;
     private Exception? terminalException;
+    private Exception? logException;
 
     public ConsoleSession(
         AccountProfile account,
@@ -102,16 +111,38 @@ public sealed class ConsoleSession : IAsyncDisposable
         Action profilesChanged,
         string logDirectory,
         bool enablePacketInspection = false)
+        : this(
+            account,
+            server,
+            authentication,
+            profilesChanged,
+            logDirectory,
+            enablePacketInspection,
+            static (path, maximumBytes) => new RotatingLogWriter(path, maximumBytes))
+    {
+    }
+
+    internal ConsoleSession(
+        AccountProfile account,
+        ServerProfile server,
+        IIdentityProvider authentication,
+        Action profilesChanged,
+        string logDirectory,
+        bool enablePacketInspection,
+        Func<string, long, RotatingLogWriter> logWriterFactory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
-        this.account = account;
-        this.server = server;
-        this.authentication = authentication;
-        this.profilesChanged = profilesChanged;
-        Directory.CreateDirectory(logDirectory);
-        string safeName = string.Concat(server.DisplayName.Select(character =>
-            Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
-        LogPath = Path.Combine(logDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{safeName}.log");
+        this.account = account ?? throw new ArgumentNullException(nameof(account));
+        this.server = server ?? throw new ArgumentNullException(nameof(server));
+        this.authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
+        this.profilesChanged = profilesChanged ?? throw new ArgumentNullException(nameof(profilesChanged));
+        this.logWriterFactory = logWriterFactory ?? throw new ArgumentNullException(nameof(logWriterFactory));
+        PrivateFileSystem.EnsurePrivateDirectory(logDirectory);
+        string accountName = SafeLogComponent(account.DisplayName);
+        string serverName = SafeLogComponent(server.DisplayName);
+        string fileStem = $"{DateTime.UtcNow:yyyyMMdd-HHmmssfff}-{accountName}-{account.Id:N}-{serverName}-{server.Id:N}";
+        logBasePath = RotatingLogWriter.ReserveUniquePath(logDirectory, fileStem);
+        LogPath = logBasePath;
         PacketInspectionEnabled = enablePacketInspection;
         logTask = WriteLogAsync();
     }
@@ -125,16 +156,24 @@ public sealed class ConsoleSession : IAsyncDisposable
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
 
-    public string LogPath { get; }
+    public string LogPath { get; private set; }
     public bool PacketInspectionEnabled { get; }
     public Exception? TerminalException => Volatile.Read(ref terminalException);
+    public Exception? LogException => Volatile.Read(ref logException);
+    public Exception? FailureException => LogException ?? TerminalException;
     public Task Completion => runTask ?? Task.CompletedTask;
     public IReadOnlyDictionary<string, long> UnknownPacketStatistics =>
         new Dictionary<string, long>(unknownPacketStatistics);
-    public IReadOnlyList<string> RecentDiagnostics => recentDiagnostics.ToArray();
+    public IReadOnlyList<string> RecentDiagnostics
+    {
+        get
+        {
+            lock (diagnosticsLock) return recentDiagnostics.ToArray();
+        }
+    }
     public bool IsConnected => connection?.State == ConnectionState.Play;
     public bool ShouldRestore => Volatile.Read(ref stopping) == 0 && runTask is { IsCompleted: false };
-    public string Title => $"{account.DisplayName} @ {server.DisplayName}";
+    public string Title => TerminalTextSanitizer.Sanitize($"{account.DisplayName} @ {server.DisplayName}");
     public AccountProfile Account => account;
     public ServerProfile Server => server;
     public SessionSnapshot Snapshot
@@ -160,7 +199,22 @@ public sealed class ConsoleSession : IAsyncDisposable
     public async Task RespawnAsync(CancellationToken cancellationToken = default)
     {
         MinecraftConnection active = connection ?? throw new InvalidOperationException("The session is not connected.");
-        await active.RespawnAsync(cancellationToken).ConfigureAwait(false);
+        bool claimedKnownDeath = Interlocked.CompareExchange(ref dead, 0, 1) == 1;
+        if (!claimedKnownDeath && Volatile.Read(ref respawnPending) != 0)
+        {
+            Add(SessionLineKind.Information, SessionLineCategory.System, "A respawn request is already in progress.");
+            return;
+        }
+        try
+        {
+            await active.RespawnAsync(cancellationToken).ConfigureAwait(false);
+            if (claimedKnownDeath) SetStatus("CONNECTED", SessionLineKind.Success);
+        }
+        catch
+        {
+            if (claimedKnownDeath) Interlocked.Exchange(ref dead, 1);
+            throw;
+        }
     }
 
     public void Stop()
@@ -181,8 +235,10 @@ public sealed class ConsoleSession : IAsyncDisposable
         try
         {
             SetStatus("AUTHENTICATING", SessionLineKind.Information);
+            string? previousAccountIdentifier = account.AccountIdentifier;
             identity = await authentication.GetIdentityAsync(account, AddInformation, cancellationToken).ConfigureAwait(false);
-            profilesChanged();
+            if (!string.Equals(previousAccountIdentifier, account.AccountIdentifier, StringComparison.Ordinal))
+                profilesChanged();
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -192,14 +248,19 @@ public sealed class ConsoleSession : IAsyncDisposable
                 {
                     SetNextReconnect(null);
                     SetStatus("DISCOVERING SERVER", SessionLineKind.Information);
-                    (ServerAddress endpoint, ProtocolDefinition protocol) = await DiscoverAsync(cancellationToken).ConfigureAwait(false);
+                    (ServerAddress endpoint, ProtocolDefinition protocol, int? statusPingMilliseconds) =
+                        await DiscoverAsync(cancellationToken).ConfigureAwait(false);
                     SetProtocol(protocol);
                     Add(SessionLineKind.Information, SessionLineCategory.Connection,
                         endpoint.UsedSrv
                             ? $"SRV resolved {endpoint.HandshakeHost} to {endpoint.NetworkHost}:{endpoint.Port}."
                             : $"Using {endpoint.NetworkHost}:{endpoint.Port}.");
 
-                    await using MinecraftConnection active = new(endpoint, identity, protocol);
+                    await using MinecraftConnection active = new(
+                        endpoint,
+                        identity,
+                        protocol,
+                        initialPingMilliseconds: statusPingMilliseconds);
                     connection = active;
                     Wire(active, cancellationToken);
                     SetStatus("CONNECTING", SessionLineKind.Information);
@@ -211,6 +272,7 @@ public sealed class ConsoleSession : IAsyncDisposable
                         Notify(SessionNotificationKind.Reconnect, "Session reconnected", Title);
                     }
                     connectedBefore = true;
+                    RecordConnectionEstablished();
                     ConnectedChanged?.Invoke(true);
                     SetStatus("CONNECTED", SessionLineKind.Success);
                     Add(SessionLineKind.Success, SessionLineCategory.Connection,
@@ -249,7 +311,7 @@ public sealed class ConsoleSession : IAsyncDisposable
 
                 if (cancellationToken.IsCancellationRequested) break;
                 failure ??= new IOException("The connection ended unexpectedly.");
-                Volatile.Write(ref terminalException, failure);
+                RecordTerminalFailure(failure);
                 DisconnectDecision decision = DisconnectClassifier.Classify(failure);
                 Add(decision.Category == DisconnectCategory.Permanent ? SessionLineKind.Error : SessionLineKind.Warning,
                     decision.Category == DisconnectCategory.Permanent ? SessionLineCategory.Error : SessionLineCategory.Connection,
@@ -301,7 +363,7 @@ public sealed class ConsoleSession : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Volatile.Write(ref terminalException, exception);
+            RecordTerminalFailure(exception);
             Add(SessionLineKind.Error, SessionLineCategory.Error, FriendlyError(exception));
             Notify(SessionNotificationKind.Error, "Session error", $"{Title} · {FriendlyError(exception)}");
         }
@@ -314,7 +376,8 @@ public sealed class ConsoleSession : IAsyncDisposable
         }
     }
 
-    private async Task<(ServerAddress Address, ProtocolDefinition Protocol)> DiscoverAsync(CancellationToken cancellationToken)
+    private async Task<(ServerAddress Address, ProtocolDefinition Protocol, int? StatusPingMilliseconds)> DiscoverAsync(
+        CancellationToken cancellationToken)
     {
         MinecraftServerStatus? status = null;
         try
@@ -335,8 +398,9 @@ public sealed class ConsoleSession : IAsyncDisposable
             ? catalog.Resolve(status?.ProtocolVersion ?? throw new IOException(
                 "Automatic version detection failed. Select a version manually or verify that the server is online."))
             : catalog.Resolve(server.Version);
-        ServerAddress endpoint = status?.Address ?? ServerAddress.Parse(server.Address, server.CustomPort).ResolveSrv();
-        return (endpoint, protocol);
+        ServerAddress endpoint = status?.Address ?? await ServerAddress.Parse(server.Address, server.CustomPort)
+            .ResolveSrvAsync(cancellationToken).ConfigureAwait(false);
+        return (endpoint, protocol, status?.PingMilliseconds);
     }
 
     private void Wire(MinecraftConnection active, CancellationToken cancellationToken)
@@ -403,18 +467,24 @@ public sealed class ConsoleSession : IAsyncDisposable
 
     private void OnChatReceived(ChatLine line)
     {
-        Add(SessionLineKind.Chat, SessionLineCategory.Chat, line.Text, line.Formatting);
+        SessionLine? published = Add(
+            SessionLineKind.Chat,
+            SessionLineCategory.Chat,
+            line.Text,
+            line.Formatting);
+        if (published is null) return;
+        string text = published.Text;
         string ownName = identity?.Username ?? account.LoginHint;
         if (string.IsNullOrWhiteSpace(ownName)) return;
-        string lower = line.Text.ToLowerInvariant();
+        string lower = text.ToLowerInvariant();
         bool privateMessage = lower.Contains("whispers", StringComparison.Ordinal) ||
                               lower.Contains("[pm]", StringComparison.Ordinal) ||
                               lower.Contains("[msg]", StringComparison.Ordinal) ||
                               lower.Contains("-> you", StringComparison.Ordinal);
         if (privateMessage)
-            Notify(SessionNotificationKind.PrivateMessage, $"Private message · {server.DisplayName}", line.Text);
-        else if (line.Text.Contains(ownName, StringComparison.OrdinalIgnoreCase))
-            Notify(SessionNotificationKind.Mention, $"Mention · {server.DisplayName}", line.Text);
+            Notify(SessionNotificationKind.PrivateMessage, $"Private message · {server.DisplayName}", text);
+        else if (text.Contains(ownName, StringComparison.OrdinalIgnoreCase))
+            Notify(SessionNotificationKind.Mention, $"Mention · {server.DisplayName}", text);
     }
 
     private void OnDeath(MinecraftConnection active, CancellationToken cancellationToken)
@@ -432,9 +502,15 @@ public sealed class ConsoleSession : IAsyncDisposable
         try
         {
             await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            if (Interlocked.CompareExchange(ref dead, 0, 1) != 1) return;
             await active.RespawnAsync(cancellationToken).ConfigureAwait(false);
             Add(SessionLineKind.Success, SessionLineCategory.System, "Automatic respawn requested.");
             SetStatus("CONNECTED", SessionLineKind.Success);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref dead, 1);
+            throw;
         }
         finally
         {
@@ -494,31 +570,96 @@ public sealed class ConsoleSession : IAsyncDisposable
 
     private void AddInformation(string text) => Add(SessionLineKind.Information, SessionLineCategory.System, text);
 
-    private void Add(
+    private SessionLine? Add(
         SessionLineKind kind,
         SessionLineCategory category,
         string text,
         FormattedChatText? formatting = null)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        SessionLine line = new(DateTimeOffset.Now, kind, category, text.Trim(), formatting);
-        recentDiagnostics.Enqueue($"{line.Timestamp:O} [{line.Category}] [{line.Kind}] {SensitiveDataRedactor.RedactText(line.Text)}");
-        while (recentDiagnostics.Count > 200 && recentDiagnostics.TryDequeue(out _)) { }
+        SessionLine? line = SessionLinePolicy.Create(DateTimeOffset.Now, kind, category, text, formatting);
+        if (line is null) return null;
+        RecordDiagnostic(line);
         logLines.Writer.TryWrite(line);
         LineAdded?.Invoke(line);
+        return line;
     }
+
+    internal SessionLine? AddForTesting(
+        SessionLineKind kind,
+        SessionLineCategory category,
+        string text,
+        FormattedChatText? formatting = null) => Add(kind, category, text, formatting);
 
     private async Task WriteLogAsync()
     {
-        await using FileStream file = new(LogPath, FileMode.Append, FileAccess.Write, FileShare.Read,
-            16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using StreamWriter writer = new(file);
-        await foreach (SessionLine line in logLines.Reader.ReadAllAsync().ConfigureAwait(false))
+        RotatingLogWriter? writer = null;
+        try
         {
-            await writer.WriteLineAsync($"{line.Timestamp:O} [{line.Category}] [{line.Kind}] {SensitiveDataRedactor.RedactText(line.Text)}")
-                .ConfigureAwait(false);
-            await writer.FlushAsync().ConfigureAwait(false);
+            await foreach (SessionLine line in logLines.Reader.ReadAllAsync().ConfigureAwait(false))
+            {
+                writer ??= logWriterFactory(logBasePath, MaximumSessionLogBytes);
+                await writer.WriteLineAsync(
+                    $"{line.Timestamp:O} [{line.Category}] [{line.Kind}] {SensitiveDataRedactor.RedactText(line.Text)}")
+                    .ConfigureAwait(false);
+                LogPath = writer.CurrentPath;
+            }
         }
+        catch (Exception exception)
+        {
+            ReportLogFailure(exception);
+        }
+        finally
+        {
+            if (writer is not null)
+            {
+                try { await writer.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { ReportLogFailure(exception); }
+            }
+        }
+    }
+
+    private void ReportLogFailure(Exception exception)
+    {
+        if (Interlocked.CompareExchange(ref logException, exception, null) is not null) return;
+        SessionLine? line = SessionLinePolicy.Create(
+            DateTimeOffset.Now,
+            SessionLineKind.Error,
+            SessionLineCategory.Error,
+            $"Session logging stopped for '{Title}': {FriendlyError(exception)}");
+        if (line is null) return;
+        RecordDiagnostic(line);
+        LineAdded?.Invoke(line);
+        Notify(SessionNotificationKind.Error, "Session logging stopped", line.Text);
+    }
+
+    private void RecordDiagnostic(SessionLine line)
+    {
+        string diagnostic = $"{line.Timestamp:O} [{line.Category}] [{line.Kind}] {line.Text}";
+        lock (diagnosticsLock)
+        {
+            recentDiagnostics.Enqueue(diagnostic);
+            recentDiagnosticCharacters += diagnostic.Length;
+            while (recentDiagnostics.Count > MaximumRecentDiagnosticLines ||
+                   recentDiagnosticCharacters > MaximumRecentDiagnosticCharacters)
+            {
+                recentDiagnosticCharacters -= recentDiagnostics.Dequeue().Length;
+            }
+        }
+    }
+
+    internal void RecordTerminalFailure(Exception exception) =>
+        Volatile.Write(ref terminalException, exception ?? throw new ArgumentNullException(nameof(exception)));
+
+    internal void RecordConnectionEstablished() => Volatile.Write(ref terminalException, null);
+
+    private static string SafeLogComponent(string value)
+    {
+        string safe = string.Concat((value ?? string.Empty).Select(character =>
+            char.IsControl(character) || char.IsSurrogate(character) ||
+            Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+        safe = safe.Trim().TrimEnd('.');
+        if (safe.Length == 0) safe = "profile";
+        return safe.Length <= 32 ? safe : safe[..32];
     }
 
     private void SetProtocol(ProtocolDefinition protocol)
@@ -539,6 +680,7 @@ public sealed class ConsoleSession : IAsyncDisposable
 
     private void SetStatus(string text, SessionLineKind kind)
     {
+        text = SessionLinePolicy.NormalizeText(text);
         lock (stateLock)
         {
             currentStatus = text;
@@ -553,7 +695,8 @@ public sealed class ConsoleSession : IAsyncDisposable
     private SessionSnapshot CreateSnapshotLocked() => new(
         currentStatus,
         currentStatusKind,
-        server.Address + (server.CustomPort > 0 ? $":{server.CustomPort}" : string.Empty),
+        TerminalTextSanitizer.Sanitize(
+            server.Address + (server.CustomPort > 0 ? $":{server.CustomPort}" : string.Empty)),
         currentVersion,
         currentProtocol,
         health,
@@ -566,18 +709,22 @@ public sealed class ConsoleSession : IAsyncDisposable
         connection?.State == ConnectionState.Play);
 
     private void Notify(SessionNotificationKind kind, string title, string message) =>
-        NotificationRequested?.Invoke(new SessionNotification(kind, title, message));
+        NotificationRequested?.Invoke(new SessionNotification(
+            kind,
+            SessionLinePolicy.NormalizeText(title),
+            SessionLinePolicy.NormalizeText(message)));
 
     private static string FriendlyError(Exception exception)
     {
         Exception source = exception is AggregateException aggregate ? aggregate.GetBaseException() : exception;
-        return source switch
+        string message = source switch
         {
             SocketException => "The server did not accept the network connection. Check its status, address and custom port.",
             TimeoutException => source.Message,
             OperationCanceledException => "The operation was cancelled.",
             _ => source.Message
         };
+        return SessionLinePolicy.NormalizeText(message);
     }
 
     public async ValueTask DisposeAsync()
@@ -589,8 +736,7 @@ public sealed class ConsoleSession : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
         logLines.Writer.TryComplete();
-        try { await logTask.ConfigureAwait(false); }
-        catch (IOException) { }
+        await logTask.ConfigureAwait(false);
         lifetime.Dispose();
     }
 }

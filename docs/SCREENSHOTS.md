@@ -38,13 +38,31 @@ This Microsoft-authenticated session remained connected past the proxy's former
 also shows the complete DPI-scaled session toolbar and live protocol metrics.
 OeXYZ did not send chat or gameplay automation during the public capture.
 
-## Public offline-mode compatibility evidence
+## v1.3 Linux terminal dashboard and public offline-mode evidence
 
-![OeXYZ connected passively to Minecraft Anarchy](images/public-anarchy-connected.png)
+![OeXYZ Linux dashboard receiving public chat](images/v1.3-linux-public-chat.png)
 
-The public test was passive: no account was registered, no password was sent,
-and no rules were bypassed. See [TESTING.md](TESTING.md) for the exact scope and
-the documented PikaNetwork policy rejection.
+The random offline identity was registered once in an earlier setup run using a
+one-time value generated only in memory; OeXYZ redacted the command from its
+console, logs, and history. The photographed reconnect itself was passive and
+sent no chat or gameplay command. It shows a real `linux-x64` single-file build,
+protocol 776, other players' public messages, live metrics, more than 30 event
+rows, a complete resized frame, and clean exit code 0. See
+[TESTING.md](TESTING.md) for the exact scope.
+
+## v1.3 premium Linux session over SSH
+
+![OeXYZ premium Linux session over SSH with public chat](images/v1.3-linux-premium-ssh.png)
+
+The same native `linux-x64` single-file build ran on an Ubuntu 26.04 x86_64
+machine through SSH. This Microsoft-authenticated online-mode session verified
+the Minecraft account, enabled encryption, joined `anarchy.ac` on protocol 776
+with 15 players online, and passively received seven public chat/join/leave
+events. The dashboard shows an 88 ms live ping, HP 20, Food 20, coordinates,
+traffic, and packet counters after more than one minute. OeXYZ sent no chat or
+server command, and its local `/quit` control returned exit code 0. The capture
+contains no device code, token, password, or private message. Its SHA-256 is
+`E07D4539CFF22F2691803ED922D932FDDC184D7D08503A117C75F0076902C534`.
 
 ## Social preview assets
 

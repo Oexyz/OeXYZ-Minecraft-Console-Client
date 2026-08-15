@@ -9,6 +9,8 @@
   <Project Path="src/OeXYZ.IntegrationClient/OeXYZ.IntegrationClient.csproj" />
   <Project Path="tests/OeXYZ.Core.Tests/OeXYZ.Core.Tests.csproj" />
   <Project Path="tests/OeXYZ.ConsoleClient.Tests/OeXYZ.ConsoleClient.Tests.csproj" />
+  <Project Path="tests/OeXYZ.Authentication.Tests/OeXYZ.Authentication.Tests.csproj" />
+  <Project Path="tests/OeXYZ.Cli.Tests/OeXYZ.Cli.Tests.csproj" />
   <Project Path="tests/OeXYZ.Protocol.Tests/OeXYZ.Protocol.Tests.csproj" />
   <Project Path="tests/OeXYZ.Session.Tests/OeXYZ.Session.Tests.csproj" />
 </Solution>

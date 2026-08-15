@@ -41,8 +41,13 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private int pingMilliseconds = -1;
     private Exception? terminalException;
 
-    public MinecraftConnection(string host, ushort port, string username, ProtocolDefinition protocol)
-        : this(host, port, MinecraftIdentity.Offline(username), protocol)
+    public MinecraftConnection(
+        string host,
+        ushort port,
+        string username,
+        ProtocolDefinition protocol,
+        int? initialPingMilliseconds = null)
+        : this(host, port, MinecraftIdentity.Offline(username), protocol, initialPingMilliseconds: initialPingMilliseconds)
     {
     }
 
@@ -51,8 +56,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ushort port,
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
-        MinecraftServicesClient? servicesClient = null)
-        : this(host, host, port, identity, protocol, servicesClient)
+        MinecraftServicesClient? servicesClient = null,
+        int? initialPingMilliseconds = null)
+        : this(host, host, port, identity, protocol, servicesClient, initialPingMilliseconds)
     {
     }
 
@@ -60,8 +66,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ServerAddress address,
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
-        MinecraftServicesClient? servicesClient = null)
-        : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient)
+        MinecraftServicesClient? servicesClient = null,
+        int? initialPingMilliseconds = null)
+        : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient,
+            initialPingMilliseconds)
     {
     }
 
@@ -71,7 +79,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ushort port,
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
-        MinecraftServicesClient? servicesClient)
+        MinecraftServicesClient? servicesClient,
+        int? initialPingMilliseconds)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(handshakeHost);
@@ -85,6 +94,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
         this.identity = identity;
         this.protocol = protocol;
         this.servicesClient = servicesClient ?? new MinecraftServicesClient();
+        if (initialPingMilliseconds is < 0)
+            throw new ArgumentOutOfRangeException(nameof(initialPingMilliseconds));
+        pingMilliseconds = initialPingMilliseconds ?? -1;
     }
 
     public event Action<string>? Log;
@@ -217,7 +229,14 @@ public sealed class MinecraftConnection : IAsyncDisposable
             throw new NotSupportedException("Outgoing chat is not mapped for this protocol version.");
         }
 
-        Log?.Invoke($"Chat sent: {SensitiveDataRedactor.RedactCommand(message)}");
+        Log?.Invoke(FormatOutgoingChatLog(message));
+    }
+
+    internal static string FormatOutgoingChatLog(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        string commandSafe = SensitiveDataRedactor.RedactCommand(message);
+        return $"Chat sent: {SensitiveDataRedactor.RedactText(commandSafe)}";
     }
 
     public async Task RespawnAsync(CancellationToken cancellationToken = default)
@@ -875,7 +894,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         try
         {
             PacketReader reader = new(payload);
-            return reader.ReadString();
+            return ChatTextCodec.FromJson(reader.ReadString());
         }
         catch
         {
@@ -935,7 +954,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 switch (action)
                 {
                     case 0:
-                        string name = reader.ReadString(16);
+                        string name = TerminalTextSanitizer.Sanitize(reader.ReadString(16));
                         SkipProperties(ref reader);
                         int gameMode = reader.ReadVarInt();
                         int latency = reader.ReadVarInt();
@@ -975,7 +994,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 PlayerListEntry entry = players.GetValueOrDefault(uuid) ?? new PlayerListEntry(uuid, uuid.ToString("N"), -1, -1);
                 if ((actions & 0x01) != 0)
                 {
-                    string name = reader.ReadString(16);
+                    string name = TerminalTextSanitizer.Sanitize(reader.ReadString(16));
                     SkipProperties(ref reader);
                     entry = entry with { Name = name };
                 }
@@ -1053,7 +1072,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
 
     private void UpdateOwnPing(PlayerListEntry entry)
     {
-        if (entry.Uuid == identity.PlayerUuid && entry.PingMilliseconds >= 0)
+        // Some proxies publish a placeholder latency of zero for the local
+        // player. Keep the measured status-handshake RTT in that case, then
+        // replace it as soon as the server supplies a positive live latency.
+        if (entry.Uuid == identity.PlayerUuid &&
+            (entry.PingMilliseconds > 0 || Volatile.Read(ref pingMilliseconds) < 0))
             Volatile.Write(ref pingMilliseconds, entry.PingMilliseconds);
     }
 

@@ -13,7 +13,7 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
         if (customPort is < 0 or > 65535) throw new ArgumentOutOfRangeException(nameof(customPort));
 
         string host;
-        int embeddedPort = 0;
+        int? embeddedPort = null;
         if (value.StartsWith("[", StringComparison.Ordinal))
         {
             int close = value.IndexOf(']');
@@ -21,8 +21,10 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
             host = value[1..close];
             if (close + 1 < value.Length)
             {
-                if (value[close + 1] != ':' || !int.TryParse(value[(close + 2)..], out embeddedPort))
+                if (value[close + 1] != ':' ||
+                    !int.TryParse(value[(close + 2)..], out int parsedPort))
                     throw new FormatException("The port after the IPv6 address is invalid.");
+                embeddedPort = parsedPort;
             }
         }
         else
@@ -32,8 +34,9 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
             if (firstColon >= 0 && firstColon == lastColon)
             {
                 host = value[..firstColon];
-                if (!int.TryParse(value[(firstColon + 1)..], out embeddedPort))
+                if (!int.TryParse(value[(firstColon + 1)..], out int parsedPort))
                     throw new FormatException("The port in the server address is invalid.");
+                embeddedPort = parsedPort;
             }
             else
             {
@@ -42,13 +45,14 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
         }
 
         host = host.Trim().TrimEnd('.');
-        if (host.Length is 0 or > 255 || host.Any(char.IsWhiteSpace))
+        if (!IsSafeHostText(host))
             throw new FormatException("The server host name is invalid.");
-        int selectedPort = customPort > 0 ? customPort : embeddedPort;
-        if (selectedPort is < 0 or > 65535) throw new FormatException("The server port must be between 1 and 65535.");
-        return new ServerAddress(host, host, (ushort)(selectedPort == 0 ? 25565 : selectedPort), false)
+        if (embeddedPort is <= 0 or > 65535)
+            throw new FormatException("The server port must be between 1 and 65535.");
+        int selectedPort = customPort > 0 ? customPort : embeddedPort ?? 25565;
+        return new ServerAddress(host, host, (ushort)selectedPort, false)
         {
-            HasExplicitPort = selectedPort > 0
+            HasExplicitPort = customPort > 0 || embeddedPort.HasValue
         };
     }
 
@@ -62,6 +66,21 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
             ? this
             : this with { NetworkHost = record.Target, Port = record.Port, UsedSrv = true };
     }
+
+    public async ValueTask<ServerAddress> ResolveSrvAsync(CancellationToken cancellationToken = default)
+    {
+        if (HasExplicitPort) return this;
+        if (OperatingSystem.IsWindows()) return ResolveSrv();
+        PortableSrvEndpoint? endpoint = await PortableSrvResolver.QueryAsync(HandshakeHost, cancellationToken)
+            .ConfigureAwait(false);
+        return endpoint is null || !IsSafeHostText(endpoint.Target)
+            ? this
+            : this with { NetworkHost = endpoint.Target, Port = endpoint.Port, UsedSrv = true };
+    }
+
+    private static bool IsSafeHostText(string host) =>
+        host.Length is > 0 and <= 255 &&
+        !host.Any(value => char.IsWhiteSpace(value) || char.IsControl(value) || value is '\u2028' or '\u2029');
 
     private sealed record SrvRecord(string Target, ushort Port);
 
@@ -81,8 +100,9 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
                     if (record.Type == 33 && record.Data.Srv.Port > 0 && record.Data.Srv.Target != IntPtr.Zero)
                     {
                         string? target = Marshal.PtrToStringUni(record.Data.Srv.Target);
-                        if (!string.IsNullOrWhiteSpace(target))
-                            candidates.Add((target.TrimEnd('.'), record.Data.Srv.Port, record.Data.Srv.Priority, record.Data.Srv.Weight));
+                        string normalized = target?.TrimEnd('.') ?? string.Empty;
+                        if (IsSafeHostText(normalized))
+                            candidates.Add((normalized, record.Data.Srv.Port, record.Data.Srv.Priority, record.Data.Srv.Weight));
                     }
                     current = record.Next;
                 }

@@ -62,7 +62,8 @@ internal static class PlayerChatDecoder
                         text = unsignedText;
                 }
             }
-            if (string.IsNullOrWhiteSpace(text) || text.Any(char.IsControl)) return null;
+            text = TerminalTextSanitizer.Sanitize(text);
+            if (string.IsNullOrWhiteSpace(text)) return null;
             return new DecodedPlayerChat(sender, text);
         }
         catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or ArgumentException)

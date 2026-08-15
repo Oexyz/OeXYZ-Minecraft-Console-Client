@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 
@@ -86,22 +85,28 @@ internal sealed class AccountDialog : Form
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {
-        string name = nameBox.Text.Trim();
+        string name;
+        try { name = ProfileRules.NormalizeProfileName(nameBox.Text, "account"); }
+        catch (InvalidDataException exception)
+        {
+            BrandMessageBox.Show(this, exception.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         string login = loginBox.Text.Trim();
         AccountKind kind = kindBox.SelectedIndex == 1 ? AccountKind.Offline : AccountKind.Microsoft;
-        if (name.Length == 0)
+        if (kind == AccountKind.Offline)
         {
-            BrandMessageBox.Show(this, "Enter a friendly profile name.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            try { ProfileRules.EnsureValidOfflineName(login); }
+            catch (InvalidDataException exception)
+            {
+                BrandMessageBox.Show(this, exception.Message, Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
         }
-        if (kind == AccountKind.Offline && !Regex.IsMatch(login, "^[A-Za-z0-9_]{1,16}$"))
+        AccountProfile basis = existing ?? new AccountProfile { Id = Guid.NewGuid() };
+        Result = basis with
         {
-            BrandMessageBox.Show(this, "Offline player names must contain 1-16 letters, numbers or underscores.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        Result = new AccountProfile
-        {
-            Id = existing?.Id ?? Guid.NewGuid(),
             DisplayName = name,
             Kind = kind,
             LoginHint = login,
@@ -314,7 +319,7 @@ internal sealed class ServerDialog : Form
     {
         try
         {
-            string name = nameBox.Text.Trim();
+            string name = ProfileRules.NormalizeProfileName(nameBox.Text, "server");
             string address = addressBox.Text.Trim();
             string version = versionBox.Text.Trim();
             if (name.Length == 0) throw new FormatException("Enter a friendly server name.");

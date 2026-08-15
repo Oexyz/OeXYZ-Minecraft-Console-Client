@@ -8,9 +8,9 @@ and CLI are frontends over one session implementation:
 OeXYZ.ConsoleClient (Windows WinForms GUI: DPI, tray, notifications)
 └── OeXYZ.Session ──────────────┐
                                ├── OeXYZ.Protocol
-OeXYZ.Cli (headless stdin/out) ─┘
+OeXYZ.Cli (Windows/Linux headless, dashboard, supervisor) ─┘
        │
-       ├── OeXYZ.Authentication (Microsoft browser auth + Windows DPAPI adapter)
+       ├── OeXYZ.Authentication (browser/device auth + platform storage)
        ├── OeXYZ.Core (profiles, policies, migration, paths, redaction)
        └── OeXYZ.Updater (GitHub Releases, SHA-256, staging, rollback)
 ```
@@ -21,15 +21,19 @@ OeXYZ.Cli (headless stdin/out) ─┘
 have no WinForms dependency. They own packet I/O, profiles, reconnect policy,
 metrics, logging, diagnostics, Anti-AFK timing, startup commands, and the
 complete session lifecycle. `OeXYZ.Cli` also targets plain `net10.0` and uses
-async stdin/stdout plus Ctrl+C cancellation.
+async stdin/stdout, Ctrl+C/SIGTERM cancellation, an optional ANSI dashboard, a
+loopback health server, and systemd readiness/watchdog notifications.
+Self-contained single-file builds target `win-x64`, `win-arm64`, `linux-x64`,
+and `linux-arm64`.
 
 Only `OeXYZ.ConsoleClient` targets `net10.0-windows`; tray mode, balloon
 notifications, Per-Monitor V2 DPI handling, dialogs, and UI controls stay
-there. Its regular and italic Inter variable fonts are embedded resources,
-loaded into a process-private font collection, and scaled through WinForms
-rather than installed system-wide. `OeXYZ.Authentication` keeps the current DPAPI account-storage adapter
-separate. Offline profiles are already platform-neutral; secure Microsoft
-device-code storage on Linux is explicitly future v1.3 work.
+there. Linux intentionally has no WinForms or desktop dependency. The Windows
+GUI's regular and italic Inter variable fonts are embedded resources, loaded
+into a process-private font collection, and scaled through WinForms rather than
+installed system-wide. `OeXYZ.Authentication` keeps platform storage separate:
+Windows uses DPAPI `CurrentUser`; Linux uses the terminal device-code flow, an
+AES-256-GCM account/session document, and no desktop or browser dependency.
 
 ## Protocol and untrusted data
 
@@ -66,9 +70,10 @@ allowing unbounded RAM growth. No reconnect attempt retains a
 socket or handler after disposal. Ctrl+C, GUI Disconnect, tab Close, and process
 exit all converge on the same cancellation path.
 
-The GUI applies age retention at startup and once per minute, followed by a
-hard 300 MB aggregate cap. Selection is deterministic by last-write time; the
-oldest closed logs are removed first and active session paths are protected.
+Both frontends apply age retention at startup and once per minute, followed by
+a hard 300 MB aggregate cap. Active session logs rotate at 16 MiB and CLI log
+files at 32 MiB. Selection is deterministic by last-write time; the oldest
+closed parts are removed first and active session paths are protected.
 
 Protocol callbacks update immutable snapshots. WinForms drains queued chat in
 bounded batches and never performs network work on the UI thread. The CLI
@@ -78,23 +83,55 @@ and reject authentication/registration/password commands.
 
 ## Authentication and secrets
 
-`CmlLib.Core.Auth.Microsoft` performs the supported browser flow. OeXYZ never
-handles a Microsoft password. The resulting Minecraft token is used only for
-the Mojang session join and secure-chat certificate requests. Refreshable
-account sessions are one Windows DPAPI `CurrentUser` payload in `accounts.bin`.
+`CmlLib.Core.Auth.Microsoft` performs the Windows browser flow. Linux uses a
+bounded OeXYZ adapter for Microsoft's Live device-code endpoints and then joins
+the same CmlLib/Xbox/Minecraft authentication pipeline.
+OeXYZ never handles a Microsoft password. A device user code is sent only to a
+terminal presenter and is deliberately excluded from ordinary session and file
+logs. The resulting Minecraft token is used only for Mojang session join and
+secure-chat certificate requests.
+
+On Windows, refreshable sessions are one DPAPI `CurrentUser` payload in
+`accounts.bin`. On Linux, a user-controlled passphrase/key is processed with
+PBKDF2-SHA256 (600,000 iterations and a random salt) and AES-256-GCM
+authenticated encryption. `accounts.bin` uses atomic replacement, bounded
+payloads, and `0600` file permissions. Key material and decrypted buffers are
+zeroed when no longer needed. The key itself is never accepted through a
+general environment variable.
 
 All logs, CLI errors, crash output, and support packages use the central
 `SensitiveDataRedactor`. Support ZIPs are allowlist-built and never copy
-`accounts.bin`, tokens, passwords, complete profile JSON, or full private chat
-logs.
+`accounts.bin`, account-key files, tokens, passwords,
+complete profile JSON, or full private chat logs.
 
 ## Profiles and migration
 
 The format-3 profile document preserves unknown older fields through
 `JsonExtensionData`. New fields receive conservative defaults; invalid/stale
 session bookmarks are dropped. Saving is temporary-file then replace, with a
-`.bak` copy of the previous profile. `--config` and `OEXYZ_CONFIG` override only
-the profile path, which prepares non-secret configuration mounting for v1.3.
+`.bak` copy of the previous profile. Profile input is capped at 2 MiB and JSON
+depth 64. `--config` and `OEXYZ_CONFIG` override only the non-secret profile
+path. Linux defaults follow XDG config/state roots; Docker maps separate
+config, state, and key volumes.
+
+## Service and container boundary
+
+`supervise` owns multiple shared-core sessions but enforces a configurable
+maximum (16 by default, 128 hard maximum). Profile schema 4 stores normalized
+managed-session bindings as account/server UUID pairs. The guided setup can
+therefore assign multiple accounts to one server or one account to multiple
+servers without duplicating protocol or session state. An explicit account
+option remains a deliberate override for legacy and scripted operation.
+Runtime snapshots feed the terminal
+dashboard and loopback-only `/health`, `/ready`, and `/status` endpoints; those
+responses omit account IDs and server addresses. The systemd adapter uses
+`NOTIFY_SOCKET` for `READY=1`, watchdog heartbeats, and `STOPPING=1`.
+
+The Docker image cross-publishes the CLI for the target architecture, then
+copies one binary into a pinned chiseled runtime-deps image. It runs as UID/GID
+1654 with no shell, no capabilities, a read-only root, and writable named
+volumes only at `/config`, `/state`, and `/keys`. The image contains no profile,
+token, password, or account key.
 
 ## Update trust boundary
 

@@ -49,7 +49,48 @@ Run("server address parsing", () =>
     ServerAddress ipv6 = ServerAddress.Parse("[::1]:25567");
     Equal("::1", ipv6.HandshakeHost);
     Equal((ushort)25567, ipv6.Port);
+    Throws<FormatException>(() => ServerAddress.Parse("example.org:0"));
+    Throws<FormatException>(() => ServerAddress.Parse("example.org:0", 25570));
+    Throws<FormatException>(() => ServerAddress.Parse("[::1]:0"));
+    Throws<FormatException>(() => ServerAddress.Parse("evil\u001b[2J.example.org"));
     Throws<FormatException>(() => ServerAddress.Parse("https://example.org"));
+});
+
+Run("server status text is terminal-safe and field-bounded", () =>
+{
+    string versionName = "Version\u001b]2;forged\u0007\r\n" + new string('V', 128 * 1024);
+    string description = "MOTD\u009b2J\u2028" + new string('M', 128 * 1024);
+    string json = JsonSerializer.Serialize(new
+    {
+        version = new { name = versionName, protocol = 776 },
+        players = new { online = 1, max = 20 },
+        description = new { text = description }
+    });
+
+    MinecraftServerStatus status = MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"), json, 42);
+    Equal(MinecraftServerDiscovery.MaximumVersionNameCharacters, status.VersionName.Length);
+    Equal(MinecraftServerDiscovery.MaximumDescriptionCharacters, status.Description.Length);
+    True(IsTerminalSafe(status.VersionName), "The status version still contains terminal controls.");
+    True(IsTerminalSafe(status.Description), "The status MOTD still contains terminal controls.");
+    Equal(42, status.PingMilliseconds);
+});
+
+Run("portable DNS SRV parser is bounded and preserves target ports", () =>
+{
+    const ushort transaction = 0x4F58;
+    byte[] response = CreateSrvResponse(transaction, "srv.example.org", 25570);
+    IReadOnlyList<PortableSrvEndpoint> records = PortableSrvResolver.ParseResponse(response, transaction);
+    Equal(1, records.Count);
+    Equal("srv.example.org", records[0].Target);
+    Equal((ushort)25570, records[0].Port);
+
+    byte[] pointerLoop = response.ToArray();
+    int targetOffset = PortableSrvResolver.BuildQuery("_minecraft._tcp.example.org", transaction).Length + 18;
+    pointerLoop[targetOffset] = (byte)(0xC0 | (targetOffset >> 8));
+    pointerLoop[targetOffset + 1] = (byte)targetOffset;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(pointerLoop, transaction));
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(response.AsSpan(0, 10), transaction));
 });
 
 Run("offline UUID compatibility", () =>
@@ -85,6 +126,35 @@ Run("chat formatting preserves styles without click actions", () =>
     Equal("Red under plain", legacy.Text);
     True(legacy.Runs.Any(run => run.Style.Color == "red"), "Legacy red color was not parsed.");
     True(legacy.Runs.Any(run => run.Style.Underlined), "Legacy underline was not parsed.");
+});
+
+Run("terminal sanitizer neutralizes controls in chat and plain fields", () =>
+{
+    const string unsafeText = "safe\u001b]2;title\u0007\r\nnext\t\u009b2J\u2028done";
+    const string expected = "safe ]2;title next 2J done";
+    Equal(expected, TerminalTextSanitizer.Sanitize(unsafeText));
+    Equal(string.Empty, TerminalTextSanitizer.Sanitize(null));
+
+    FormattedChatText json = ChatTextCodec.ParseJson(JsonSerializer.Serialize(new { text = unsafeText }));
+    Equal(expected, json.Text);
+    True(json.Runs.All(run => IsTerminalSafe(run.Text)), "A formatted JSON run contains terminal controls.");
+
+    FormattedChatText legacy = ChatTextCodec.ParseLegacy(unsafeText);
+    Equal(expected, legacy.Text);
+    True(legacy.Runs.All(run => IsTerminalSafe(run.Text)), "A legacy chat run contains terminal controls.");
+});
+
+Run("outgoing chat logs redact commands and structured secrets at the source", () =>
+{
+    Equal("Chat sent: /authme:login [REDACTED]",
+        MinecraftConnection.FormatOutgoingChatLog("/authme:login two word password"));
+    Equal("Chat sent: {\"password\":\"[REDACTED]\",\"safe\":\"kept\"}",
+        MinecraftConnection.FormatOutgoingChatLog("{\"password\":\"two word password\",\"safe\":\"kept\"}"));
+    Equal("Chat sent: {\"password\":\"[REDACTED]\",\"safe\":\"kept\"}",
+        MinecraftConnection.FormatOutgoingChatLog(
+            "{\"pass\\u0077ord\":[\"array-secret\",{\"value\":\"object-secret\"}],\"safe\":\"kept\"}"));
+    Equal("Chat sent: password=[REDACTED] safe=yes",
+        MinecraftConnection.FormatOutgoingChatLog("password=\"two word password\" safe=yes"));
 });
 
 Run("current NBT chat supports literal translations and modified UTF-8", () =>
@@ -130,6 +200,56 @@ Run("current NBT chat supports literal translations and modified UTF-8", () =>
         "An NBT click command leaked into rendered text.");
 });
 
+Run("NBT chat budgets reject allocation bombs and allow nested components", () =>
+{
+    PacketWriter nestedEndList = new();
+    nestedEndList.WriteByte(9);
+    nestedEndList.WriteByte(9);
+    nestedEndList.WriteInt(1);
+    nestedEndList.WriteByte(0);
+    nestedEndList.WriteInt(1_000_000);
+    Throws<InvalidDataException>(() =>
+    {
+        PacketReader reader = new(nestedEndList.ToArray());
+        _ = ChatTextCodec.ReadAnonymousNbtFormatting(ref reader);
+    });
+
+    PacketWriter oversizedList = new();
+    oversizedList.WriteByte(9);
+    oversizedList.WriteByte(1);
+    oversizedList.WriteInt(ChatTextCodec.MaximumNbtListElements + 1);
+    Throws<InvalidDataException>(() =>
+    {
+        PacketReader reader = new(oversizedList.ToArray());
+        _ = ChatTextCodec.ReadAnonymousNbtFormatting(ref reader);
+    });
+
+    PacketWriter cumulativeLists = new();
+    cumulativeLists.WriteByte(9);
+    cumulativeLists.WriteByte(9);
+    cumulativeLists.WriteInt(2);
+    cumulativeLists.WriteByte(1);
+    cumulativeLists.WriteInt(ChatTextCodec.MaximumNbtListElements);
+    cumulativeLists.WriteBytes(new byte[ChatTextCodec.MaximumNbtListElements]);
+    cumulativeLists.WriteByte(1);
+    cumulativeLists.WriteInt(ChatTextCodec.MaximumNbtListElements);
+    True(2 + (2 * ChatTextCodec.MaximumNbtListElements) > ChatTextCodec.MaximumNbtCollectionElements,
+        "The cumulative-list fixture no longer exceeds the global collection budget.");
+    Throws<InvalidDataException>(() =>
+    {
+        PacketReader reader = new(cumulativeLists.ToArray());
+        _ = ChatTextCodec.ReadAnonymousNbtFormatting(ref reader);
+    });
+
+    byte[] nestedChat = Convert.FromHexString(
+        "0A080004746578740005526F6F742009000565787472610A00000002" +
+        "0800047465787400066E65737465640009000565787472610A00000001" +
+        "0800047465787400052063686174000000");
+    PacketReader nestedReader = new(nestedChat);
+    Equal("Root nested chat", ChatTextCodec.FromAnonymousNbt(ref nestedReader));
+    Equal(0, nestedReader.Remaining);
+});
+
 Run("player chat supports native and proxy-forwarded layouts", () =>
 {
     Guid sender = Guid.Parse("52fdfc07-2182-454f-963f-5f0f9a621d72");
@@ -141,6 +261,15 @@ Run("player chat supports native and proxy-forwarded layouts", () =>
     current.WriteString("hello from current");
     Equal("<Steve> hello from current",
         PlayerChatDecoder.Decode(current.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
+
+    PacketWriter controlled = new();
+    controlled.WriteVarInt(44);
+    controlled.WriteUuid(sender);
+    controlled.WriteVarInt(0);
+    controlled.WriteBoolean(false);
+    controlled.WriteString("hello\u001b[2J\u0007");
+    Equal("<Steve> hello [2J ",
+        PlayerChatDecoder.Decode(controlled.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
 
     PacketWriter forwardedLegacy = new();
     forwardedLegacy.WriteUuid(sender);
@@ -241,6 +370,9 @@ static void True(bool value, string message)
     if (!value) throw new InvalidOperationException(message);
 }
 
+static bool IsTerminalSafe(string text) =>
+    !text.Any(value => char.IsControl(value) || value is '\u2028' or '\u2029');
+
 static void Throws<TException>(Action action) where TException : Exception
 {
     try
@@ -261,6 +393,7 @@ static async Task VerifyConnectedDisconnectAsync()
     int port = ((IPEndPoint)listener.LocalEndpoint).Port;
     using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
     TaskCompletionSource releaseServer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource releaseLatencyUpdate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     Task server = Task.Run(async () =>
     {
@@ -276,17 +409,30 @@ static async Task VerifyConnectedDisconnectAsync()
         playerInfo.WriteVarInt(0);
         playerInfo.WriteVarInt(1);
         playerInfo.WriteUuid(OfflineIdentity.CreateUuid("DisconnectTest"));
-        playerInfo.WriteString("DisconnectTest", 16);
+        playerInfo.WriteString("Disconnect\u001b[2J", 16);
         playerInfo.WriteVarInt(0);
         playerInfo.WriteVarInt(1);
-        playerInfo.WriteVarInt(42);
+        playerInfo.WriteVarInt(0);
         playerInfo.WriteBoolean(false);
         byte[] playerInfoBody = playerInfo.ToArray();
         PacketWriter playerInfoFrame = new();
         playerInfoFrame.WriteVarInt(playerInfoBody.Length);
         playerInfoFrame.WriteBytes(playerInfoBody);
         await stream.WriteAsync(playerInfoFrame.ToArray(), timeout.Token);
-        await stream.WriteAsync(playerInfoFrame.ToArray(), timeout.Token);
+
+        await stream.FlushAsync(timeout.Token);
+        await releaseLatencyUpdate.Task.WaitAsync(timeout.Token);
+        PacketWriter latencyUpdate = new();
+        latencyUpdate.WriteVarInt(0x38);
+        latencyUpdate.WriteVarInt(2);
+        latencyUpdate.WriteVarInt(1);
+        latencyUpdate.WriteUuid(OfflineIdentity.CreateUuid("DisconnectTest"));
+        latencyUpdate.WriteVarInt(42);
+        PacketWriter latencyFrame = new();
+        byte[] latencyBody = latencyUpdate.ToArray();
+        latencyFrame.WriteVarInt(latencyBody.Length);
+        latencyFrame.WriteBytes(latencyBody);
+        await stream.WriteAsync(latencyFrame.ToArray(), timeout.Token);
         await stream.WriteAsync(new byte[] { 1, 0x7F }, timeout.Token);
         await stream.FlushAsync(timeout.Token);
         await releaseServer.Task.WaitAsync(timeout.Token);
@@ -295,7 +441,12 @@ static async Task VerifyConnectedDisconnectAsync()
     try
     {
         ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8");
-        await using MinecraftConnection connection = new("127.0.0.1", (ushort)port, "DisconnectTest", protocol)
+        await using MinecraftConnection connection = new(
+            "127.0.0.1",
+            (ushort)port,
+            "DisconnectTest",
+            protocol,
+            initialPingMilliseconds: 321)
         {
             PacketInspectionEnabled = true
         };
@@ -303,12 +454,20 @@ static async Task VerifyConnectedDisconnectAsync()
         Equal(ConnectionState.Play, connection.State);
         await WaitUntilAsync(() => connection.Players.Count == 1, TimeSpan.FromSeconds(2));
         PlayerListEntry player = connection.Players.Single();
-        Equal("DisconnectTest", player.Name);
-        Equal(42, player.PingMilliseconds);
+        Equal("Disconnect [2J", player.Name);
+        Equal(0, player.PingMilliseconds);
+        True(connection.Metrics.PingMilliseconds == 321,
+            "The measured status RTT was not retained when the proxy reported zero latency.");
+        releaseLatencyUpdate.TrySetResult();
+        await WaitUntilAsync(() => connection.Metrics.PingMilliseconds == 42, TimeSpan.FromSeconds(2));
         True(connection.Metrics.PacketsReceived >= 3, "Received packet metrics were not incremented.");
         True(connection.Metrics.PacketsSent >= 3, "Sent packet metrics were not incremented.");
         True(connection.Metrics.BytesReceived > 0 && connection.Metrics.BytesSent > 0, "Wire-byte metrics were not incremented.");
         True(connection.Metrics.LastReceivedAt is not null, "Last receive activity was not recorded.");
+        await WaitUntilAsync(
+            () => connection.UnknownPacketStatistics.Any(item =>
+                item.Key.EndsWith("0x7F", StringComparison.Ordinal) && item.Value == 1),
+            TimeSpan.FromSeconds(2));
         True(connection.UnknownPacketStatistics.Any(item => item.Key.EndsWith("0x7F", StringComparison.Ordinal) && item.Value == 1),
             "The unexpected play packet was not recorded exactly once.");
 
@@ -319,6 +478,7 @@ static async Task VerifyConnectedDisconnectAsync()
     }
     finally
     {
+        releaseLatencyUpdate.TrySetResult();
         releaseServer.TrySetResult();
         await server.WaitAsync(TimeSpan.FromSeconds(2));
         listener.Stop();
@@ -422,6 +582,37 @@ static byte[] Compress(byte[] bytes)
     using MemoryStream output = new();
     using (ZLibStream zlib = new(output, CompressionLevel.Fastest, leaveOpen: true)) zlib.Write(bytes);
     return output.ToArray();
+}
+
+static byte[] CreateSrvResponse(ushort transaction, string target, ushort port)
+{
+    byte[] question = PortableSrvResolver.BuildQuery("_minecraft._tcp.example.org", transaction);
+    List<byte> response = question.ToList();
+    response[2] = 0x81;
+    response[3] = 0x80;
+    response[6] = 0;
+    response[7] = 1;
+    response.AddRange([0xC0, 0x0C, 0x00, 0x21, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3C]);
+    List<byte> record = [];
+    WriteUInt16(record, 0);
+    WriteUInt16(record, 10);
+    WriteUInt16(record, port);
+    foreach (string label in target.Split('.'))
+    {
+        byte[] bytes = Encoding.ASCII.GetBytes(label);
+        record.Add((byte)bytes.Length);
+        record.AddRange(bytes);
+    }
+    record.Add(0);
+    WriteUInt16(response, checked((ushort)record.Count));
+    response.AddRange(record);
+    return response.ToArray();
+}
+
+static void WriteUInt16(List<byte> output, ushort value)
+{
+    output.Add((byte)(value >> 8));
+    output.Add((byte)value);
 }
 
 static async Task ThrowsAsync<TException>(Func<Task> action) where TException : Exception

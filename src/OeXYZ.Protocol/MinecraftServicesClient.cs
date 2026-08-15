@@ -28,7 +28,8 @@ public sealed class MinecraftServicesClient
         };
         using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.IsSuccessStatusCode) return;
-        string detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        string detail = TerminalTextSanitizer.Sanitize(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
         throw new HttpRequestException($"Minecraft session server rejected the join ({(int)response.StatusCode}): {detail}");
     }
 

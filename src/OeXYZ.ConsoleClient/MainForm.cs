@@ -423,76 +423,99 @@ internal sealed class MainForm : Form
     {
         using AccountDialog dialog = new(null);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        profiles.Accounts.Add(dialog.Result);
-        SaveAndRefresh(dialog.Result.Id, null);
+        AccountProfile added = dialog.Result;
+        UpdateAndRefresh(current => ProfileUiOperations.AddAccount(current, added), added.Id, null);
     }
 
     private void EditAccount()
     {
         AccountProfile? profile = SelectedAccount();
         if (profile is null) { SelectHint("account"); return; }
+        long expectedRevision = profiles.Revision;
         using AccountDialog dialog = new(profile);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        profiles.Accounts[profiles.Accounts.IndexOf(profile)] = dialog.Result;
-        SaveAndRefresh(dialog.Result.Id, null);
+        AccountProfile replacement = dialog.Result;
+        UpdateAndRefresh(
+            current => ProfileUiOperations.EditAccount(current, replacement, expectedRevision),
+            replacement.Id,
+            null);
     }
 
     private void RemoveAccount()
     {
         AccountProfile? profile = SelectedAccount();
         if (profile is null) { SelectHint("account"); return; }
+        long expectedRevision = profiles.Revision;
         if (BrandMessageBox.Show(this,
                 $"Remove '{profile.DisplayName}' from the profile list?\n\nMicrosoft tokens are stored separately with Windows encryption.",
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-        profiles.Accounts.Remove(profile);
-        SaveAndRefresh(null, null);
+        UpdateAndRefresh(
+            current => ProfileUiOperations.RemoveAccount(current, profile.Id, expectedRevision),
+            null,
+            null);
     }
 
     private void AddServer()
     {
         using ServerDialog dialog = new(null);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        profiles.Servers.Add(dialog.Result);
-        SaveAndRefresh(null, dialog.Result.Id);
+        ServerProfile added = dialog.Result;
+        UpdateAndRefresh(current => ProfileUiOperations.AddServer(current, added), null, added.Id);
     }
 
     private void EditServer()
     {
         ServerProfile? profile = SelectedServer();
         if (profile is null) { SelectHint("server"); return; }
+        long expectedRevision = profiles.Revision;
         using ServerDialog dialog = new(profile);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        profiles.Servers[profiles.Servers.IndexOf(profile)] = dialog.Result;
-        SaveAndRefresh(null, dialog.Result.Id);
+        ServerProfile replacement = dialog.Result;
+        UpdateAndRefresh(
+            current => ProfileUiOperations.EditServer(current, replacement, expectedRevision),
+            null,
+            replacement.Id);
     }
 
     private void RemoveServer()
     {
         ServerProfile? profile = SelectedServer();
         if (profile is null) { SelectHint("server"); return; }
+        long expectedRevision = profiles.Revision;
         if (BrandMessageBox.Show(this, $"Remove server profile '{profile.DisplayName}'?", Text,
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-        profiles.Servers.Remove(profile);
-        SaveAndRefresh(null, null);
+        UpdateAndRefresh(
+            current => ProfileUiOperations.RemoveServer(current, profile.Id, expectedRevision),
+            null,
+            null);
     }
 
-    private void SaveAndRefresh(Guid? accountId, Guid? serverId)
+    private void UpdateAndRefresh(
+        Func<ProfileDocument, ProfileDocument> update,
+        Guid? accountId,
+        Guid? serverId)
     {
-        try
+        ArgumentNullException.ThrowIfNull(update);
+        ProfileUpdateResult result;
+        lock (saveLock)
         {
-            if (!demoMode)
-            {
-                lock (saveLock) repository.Save(profiles);
-            }
-            RefreshProfiles();
-            RestoreSelection(accounts, accountId);
-            RestoreSelection(servers, serverId);
+            result = ProfileUiOperations.TryUpdate(
+                profiles,
+                persist: mutation => demoMode
+                    ? mutation(profiles).Normalize()
+                    : repository.Update(mutation),
+                reload: () => demoMode ? profiles : repository.Load(),
+                update);
+            profiles = result.Document;
         }
-        catch (Exception exception)
+        RefreshProfiles();
+        RestoreSelection(accounts, accountId);
+        RestoreSelection(servers, serverId);
+        if (result.Failure is not null)
         {
-            BrandMessageBox.Show(this, "Profiles could not be saved:\n" + exception.Message, Text,
+            BrandMessageBox.Show(this, "Profiles could not be saved:\n" + result.Failure.Message, Text,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -521,7 +544,12 @@ internal sealed class MainForm : Form
             return;
         }
 
-        ConsoleSession session = new(account, server, authentication, ProfilesChangedFromSession, AppPaths.Logs,
+        // Authentication may attach a Microsoft account identifier. Give the
+        // session its own record so an unsuccessful persistence attempt cannot
+        // silently mutate the profile document displayed by the UI.
+        AccountProfile sessionAccount = account with { };
+        ConsoleSession session = new(sessionAccount, server, authentication,
+            () => ProfilesChangedFromSession(sessionAccount), AppPaths.Logs,
             profiles.Settings.ProtocolInspectorEnabled);
         SessionTab page = new(session);
         session.NotificationRequested += ShowSessionNotification;
@@ -538,11 +566,30 @@ internal sealed class MainForm : Form
         UpdateTrayMenu();
     }
 
-    private void ProfilesChangedFromSession()
+    private void ProfilesChangedFromSession(AccountProfile changedAccount)
     {
         if (demoMode) return;
-        lock (saveLock) repository.Save(profiles);
-        if (IsHandleCreated && !IsDisposed) BeginInvoke(RefreshProfiles);
+        ProfileUpdateResult result;
+        lock (saveLock)
+        {
+            result = ProfileUiOperations.TryPersistAccountIdentifier(
+                profiles,
+                changedAccount,
+                repository.Update,
+                repository.Load);
+            profiles = result.Document;
+        }
+
+        PostToUi(() =>
+        {
+            RefreshProfiles();
+            if (result.Failure is not null)
+                BrandMessageBox.Show(this,
+                    "The authenticated account identifier could not be saved. The session will continue, " +
+                    "but sign-in may be requested again next time.\n\n" +
+                    SensitiveDataRedactor.RedactText(result.Failure.Message),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        });
     }
 
     private AccountProfile? SelectedAccount()
@@ -586,10 +633,13 @@ internal sealed class MainForm : Form
 
     private void ShowSettings()
     {
+        long expectedRevision = profiles.Revision;
         using SettingsDialog dialog = new(profiles.Settings);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
-        profiles = profiles with { Settings = dialog.Result };
-        SaveAndRefresh(SelectedId(accounts), SelectedId(servers));
+        ApplicationSettings settings = dialog.Result;
+        UpdateAndRefresh(
+            current => ProfileUiOperations.EditSettings(current, settings, expectedRevision),
+            SelectedId(accounts), SelectedId(servers));
     }
 
     private void BuildTray()
@@ -995,28 +1045,48 @@ internal sealed class MainForm : Form
         logRetentionTimer.Stop();
         formLifetime.Cancel();
         SessionTab[] open = sessions.TabPages.OfType<SessionTab>().ToArray();
+        List<SessionBookmark> lastSessions = open.Where(page => page.Session.ShouldRestore)
+            .Select(page => new SessionBookmark
+            {
+                AccountId = page.Session.Account.Id,
+                ServerId = page.Session.Server.Id
+            })
+            .Distinct()
+            .ToList();
+        Func<Func<ProfileDocument, ProfileDocument>, ProfileDocument>? persist = null;
         if (!demoMode)
         {
-            profiles = profiles with
+            persist = update =>
             {
-                LastSessions = open.Where(page => page.Session.ShouldRestore)
-                    .Select(page => new SessionBookmark
-                    {
-                        AccountId = page.Session.Account.Id,
-                        ServerId = page.Session.Server.Id
-                    })
-                    .Distinct()
-                    .ToList()
+                lock (saveLock)
+                {
+                    profiles = repository.Update(update);
+                    return profiles;
+                }
             };
-            lock (saveLock) repository.Save(profiles);
         }
-        foreach (SessionTab page in open) await page.CloseAsync();
+        Func<Task>[] cleanupActions = open
+            .Select<SessionTab, Func<Task>>(page => () => page.CloseAsync())
+            .ToArray();
+        Exception? shutdownFailure = await ProfileUiOperations.PersistLastSessionsThenCleanupAsync(
+            lastSessions,
+            persist,
+            cleanupActions);
         trayIcon.Visible = false;
         trayIcon.Dispose();
         trayMenu.Dispose();
         serverIcons.Dispose();
         logRetentionTimer.Dispose();
         formLifetime.Dispose();
+        if (shutdownFailure is not null &&
+            eventArgs.CloseReason is not (CloseReason.WindowsShutDown or CloseReason.TaskManagerClosing))
+        {
+            BrandMessageBox.Show(this,
+                "One or more profile-save or session-cleanup operations failed. " +
+                "OeXYZ still attempted every active session cleanup.\n\n" +
+                SensitiveDataRedactor.RedactText(shutdownFailure.Message),
+                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
         Close();
     }
 

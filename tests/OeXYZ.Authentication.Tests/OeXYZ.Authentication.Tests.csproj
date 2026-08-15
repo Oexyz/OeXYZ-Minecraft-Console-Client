@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>OeXYZ.Authentication.Tests</AssemblyName>
+    <RootNamespace>OeXYZ.Authentication.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OeXYZ.Authentication\OeXYZ.Authentication.csproj" />
+  </ItemGroup>
+</Project>

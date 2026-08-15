@@ -14,7 +14,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.2.1</Version>
+    <Version>1.3.0</Version>
     <Authors>OeXYZ contributors</Authors>
     <Product>OeXYZ Console Client</Product>
     <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>
@@ -29,6 +29,9 @@
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
     <ProjectReference Include="..\OeXYZ.Session\OeXYZ.Session.csproj" />
     <ProjectReference Include="..\OeXYZ.Updater\OeXYZ.Updater.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OeXYZ.ConsoleClient.Tests" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\..\assets\fonts\Inter-VariableFont_opsz,wght.ttf"

@@ -5,6 +5,11 @@ namespace OeXYZ.Protocol;
 
 public static class ChatTextCodec
 {
+    internal const int MaximumNbtListElements = 4_096;
+    internal const int MaximumNbtCollectionElements = 8_192;
+    private const int MaximumNbtNodes = 8_192;
+    private const long MaximumNbtEstimatedAllocationBytes = 4L * 1024 * 1024;
+
     public static string FromJson(string json)
         => ParseJson(json).Text;
 
@@ -118,7 +123,8 @@ public static class ChatTextCodec
 
     internal static FormattedChatText ReadAnonymousNbtFormatting(ref PacketReader reader)
     {
-        object? value = ReadPayload(ref reader, reader.ReadByte(), 0);
+        NbtParseBudget budget = new();
+        object? value = ReadPayload(ref reader, reader.ReadByte(), 0, budget);
         List<ChatRun> runs = [];
         AppendNbt(value, new ChatStyle(), runs);
         return Build(runs);
@@ -199,6 +205,7 @@ public static class ChatTextCodec
 
     private static void AppendRun(List<ChatRun> runs, string text, ChatStyle style)
     {
+        text = TerminalTextSanitizer.Sanitize(text);
         if (text.Length == 0) return;
         if (runs.Count > 0 && runs[^1].Style == style)
             runs[^1] = runs[^1] with { Text = runs[^1].Text + text };
@@ -265,9 +272,14 @@ public static class ChatTextCodec
         return result;
     }
 
-    private static object? ReadPayload(ref PacketReader reader, byte type, int depth)
+    private static object? ReadPayload(
+        ref PacketReader reader,
+        byte type,
+        int depth,
+        NbtParseBudget budget)
     {
         if (depth > 64) throw new InvalidDataException("NBT nesting is too deep.");
+        budget.ConsumeNode();
         return type switch
         {
             0 => null,
@@ -277,58 +289,118 @@ public static class ChatTextCodec
             4 => reader.ReadLong(),
             5 => reader.ReadFloat(),
             6 => reader.ReadDouble(),
-            7 => reader.ReadBytes(CheckedLength(reader.ReadInt(), 1)),
-            8 => reader.ReadNbtString(),
-            9 => ReadList(ref reader, depth + 1),
-            10 => ReadCompound(ref reader, depth + 1),
-            11 => ReadIntArray(ref reader),
-            12 => ReadLongArray(ref reader),
+            7 => ReadByteArray(ref reader, budget),
+            8 => ReadNbtString(ref reader, budget),
+            9 => ReadList(ref reader, depth + 1, budget),
+            10 => ReadCompound(ref reader, depth + 1, budget),
+            11 => ReadIntArray(ref reader, budget),
+            12 => ReadLongArray(ref reader, budget),
             _ => throw new InvalidDataException($"Unknown NBT tag type {type}.")
         };
     }
 
-    private static List<object?> ReadList(ref PacketReader reader, int depth)
+    private static List<object?> ReadList(ref PacketReader reader, int depth, NbtParseBudget budget)
     {
         byte elementType = reader.ReadByte();
-        int length = CheckedLength(reader.ReadInt(), 1);
+        int length = CheckedLength(reader.ReadInt(), IntPtr.Size, MaximumNbtListElements);
+        if (elementType == 0 && length != 0)
+            throw new InvalidDataException("An NBT TAG_End list must be empty.");
+        budget.ReserveCollection(length, IntPtr.Size);
         List<object?> values = new(length);
-        for (int index = 0; index < length; index++) values.Add(ReadPayload(ref reader, elementType, depth));
+        for (int index = 0; index < length; index++)
+            values.Add(ReadPayload(ref reader, elementType, depth, budget));
         return values;
     }
 
-    private static Dictionary<string, object?> ReadCompound(ref PacketReader reader, int depth)
+    private static Dictionary<string, object?> ReadCompound(
+        ref PacketReader reader,
+        int depth,
+        NbtParseBudget budget)
     {
         Dictionary<string, object?> values = new(StringComparer.Ordinal);
         while (true)
         {
             byte childType = reader.ReadByte();
             if (childType == 0) return values;
-            string name = reader.ReadNbtString();
-            values[name] = ReadPayload(ref reader, childType, depth);
+            string name = ReadNbtString(ref reader, budget);
+            values[name] = ReadPayload(ref reader, childType, depth, budget);
         }
     }
 
-    private static int[] ReadIntArray(ref PacketReader reader)
+    private static byte[] ReadByteArray(ref PacketReader reader, NbtParseBudget budget)
     {
-        int length = CheckedLength(reader.ReadInt(), 4);
+        int length = CheckedLength(reader.ReadInt(), 1, MaximumNbtCollectionElements);
+        budget.ReserveCollection(length, 1);
+        return reader.ReadBytes(length);
+    }
+
+    private static int[] ReadIntArray(ref PacketReader reader, NbtParseBudget budget)
+    {
+        int length = CheckedLength(reader.ReadInt(), sizeof(int), MaximumNbtCollectionElements);
+        budget.ReserveCollection(length, sizeof(int));
         int[] values = new int[length];
         for (int index = 0; index < length; index++) values[index] = reader.ReadInt();
         return values;
     }
 
-    private static long[] ReadLongArray(ref PacketReader reader)
+    private static long[] ReadLongArray(ref PacketReader reader, NbtParseBudget budget)
     {
-        int length = CheckedLength(reader.ReadInt(), 8);
+        int length = CheckedLength(reader.ReadInt(), sizeof(long), MaximumNbtCollectionElements);
+        budget.ReserveCollection(length, sizeof(long));
         long[] values = new long[length];
         for (int index = 0; index < length; index++) values[index] = reader.ReadLong();
         return values;
     }
 
-    private static int CheckedLength(int count, int bytesPerElement)
+    private static string ReadNbtString(ref PacketReader reader, NbtParseBudget budget)
     {
-        if (count < 0 || count > 1_000_000 || (long)count * bytesPerElement > 8_000_000)
+        int before = reader.Remaining;
+        string value = reader.ReadNbtString();
+        budget.ReserveStringBytes(before - reader.Remaining - sizeof(ushort));
+        return value;
+    }
+
+    private static int CheckedLength(int count, int bytesPerElement, int maximumElements)
+    {
+        if (count < 0 || count > maximumElements ||
+            (long)count * bytesPerElement > MaximumNbtEstimatedAllocationBytes)
             throw new InvalidDataException("NBT collection length is outside safety limits.");
         return count;
+    }
+
+    private sealed class NbtParseBudget
+    {
+        private int nodes;
+        private int collectionElements;
+        private long estimatedAllocationBytes;
+
+        public void ConsumeNode()
+        {
+            if (++nodes > MaximumNbtNodes)
+                throw new InvalidDataException("NBT node budget was exceeded.");
+            ReserveAllocation(32);
+        }
+
+        public void ReserveCollection(int count, int bytesPerElement)
+        {
+            if (count < 0 || collectionElements > MaximumNbtCollectionElements - count)
+                throw new InvalidDataException("NBT collection budget was exceeded.");
+            collectionElements += count;
+            ReserveAllocation((long)count * bytesPerElement);
+        }
+
+        public void ReserveStringBytes(int encodedBytes)
+        {
+            if (encodedBytes < 0) throw new InvalidDataException("NBT string length is invalid.");
+            ReserveAllocation((long)encodedBytes * sizeof(char));
+        }
+
+        private void ReserveAllocation(long bytes)
+        {
+            if (bytes < 0 || estimatedAllocationBytes > MaximumNbtEstimatedAllocationBytes - bytes)
+                throw new InvalidDataException("NBT allocation budget was exceeded.");
+            estimatedAllocationBytes += bytes;
+        }
     }
 
     private static string FlattenNbt(object? value)

@@ -4,13 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>oexyz</AssemblyName>
     <RootNamespace>OeXYZ.Cli</RootNamespace>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows'))">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
-    <Version>1.2.1</Version>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Version>1.3.0</Version>
     <Authors>OeXYZ contributors</Authors>
     <Product>OeXYZ Headless Client</Product>
     <Description>Headless Minecraft Java console client for chat and AFK sessions.</Description>
