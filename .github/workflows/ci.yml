@@ -48,11 +48,17 @@ jobs:
       - name: Run deterministic core tests
         run: dotnet run --project tests/OeXYZ.Core.Tests -c Release --no-build
 
-      - name: Run deterministic updater tests
+      - name: Run deterministic updater and GUI behavior tests
         run: dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release --no-build
 
       - name: Run deterministic session and redaction tests
         run: dotnet run --project tests/OeXYZ.Session.Tests -c Release --no-build
+
+      - name: Run deterministic cross-platform authentication storage tests
+        run: dotnet run --project tests/OeXYZ.Authentication.Tests -c Release --no-build
+
+      - name: Run deterministic terminal dashboard tests
+        run: dotnet run --project tests/OeXYZ.Cli.Tests -c Release --no-build
 
       - name: Write protocol compatibility report
         shell: pwsh
@@ -101,5 +107,110 @@ jobs:
             artifacts/win-x64/
             artifacts/win-arm64/
             protocol-compatibility.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          driver: docker-container
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.302
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore Linux headless projects with locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects=(
+            src/OeXYZ.Cli/OeXYZ.Cli.csproj
+            tests/OeXYZ.Core.Tests/OeXYZ.Core.Tests.csproj
+            tests/OeXYZ.Protocol.Tests/OeXYZ.Protocol.Tests.csproj
+            tests/OeXYZ.Session.Tests/OeXYZ.Session.Tests.csproj
+            tests/OeXYZ.Authentication.Tests/OeXYZ.Authentication.Tests.csproj
+            tests/OeXYZ.Cli.Tests/OeXYZ.Cli.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet restore "$project" --locked-mode
+          done
+
+      - name: Validate the Linux installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n install.sh
+          sh install.sh --help >/dev/null
+          shellcheck install.sh
+          shellcheck tests/install-systemd.sh
+          sh tests/install-systemd.sh
+
+      - name: Build and run Linux deterministic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build src/OeXYZ.Cli/OeXYZ.Cli.csproj -c Release --no-restore
+          for project in \
+            tests/OeXYZ.Core.Tests \
+            tests/OeXYZ.Protocol.Tests \
+            tests/OeXYZ.Session.Tests \
+            tests/OeXYZ.Authentication.Tests; do
+            dotnet run --project "$project" -c Release --no-restore
+          done
+          dotnet run --project tests/OeXYZ.Cli.Tests -c Release --no-restore
+
+      - name: Publish and execute Linux x64 and ARM64 single-file CLIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for runtime in linux-x64 linux-arm64; do
+            output="artifacts/$runtime"
+            dotnet publish src/OeXYZ.Cli/OeXYZ.Cli.csproj \
+              -c Release -r "$runtime" --self-contained true --no-restore \
+              -p:RepositoryUrl="${{ github.server_url }}/${{ github.repository }}" -o "$output"
+            test -x "$output/oexyz"
+            test "$(find "$output" -maxdepth 1 -type f | wc -l)" -eq 1
+          done
+          artifacts/linux-x64/oexyz --help
+
+      - name: Validate Compose and build the non-root multi-architecture container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose config --quiet
+          test "$(docker compose config --images)" = \
+            "ghcr.io/oexyz/oexyz-minecraft-console-client:latest"
+          docker compose -f docker-compose.yml -f docker-compose.build.yml \
+            config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.build.yml \
+            config | grep -q 'dockerfile: Dockerfile'
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --output type=oci,dest=/tmp/oexyz-multiarch.oci \
+            --build-arg VERSION=1.3.0-dev \
+            --build-arg SOURCE_COMMIT="${{ github.sha }}" .
+
+      - name: Upload Linux CI publish
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: OeXYZ-Minecraft-Console-Client-linux-ci
+          path: |
+            artifacts/linux-x64/oexyz
+            artifacts/linux-arm64/oexyz
+            Dockerfile
+            docker-compose.yml
+            docker-compose.build.yml
+            assets/systemd/oexyz.service
+            install.sh
           if-no-files-found: error
           retention-days: 7

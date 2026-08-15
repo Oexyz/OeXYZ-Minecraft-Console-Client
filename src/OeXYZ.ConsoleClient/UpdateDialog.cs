@@ -86,7 +86,7 @@ internal sealed class UpdateDialog : Form
             result = await GitHubUpdateService.CheckAsync(cancellationToken);
             if (IsDisposed) return;
             progress.Visible = false;
-            versions.Text = $"INSTALLED  {Display(result.CurrentVersion)}\nLATEST     {Display(result.LatestVersion)}";
+            versions.Text = $"INSTALLED  {result.CurrentVersionText}\nLATEST     {result.LatestVersionText}";
             if (!result.IsUpdateAvailable)
             {
                 bool newerThanPublished = result.IsCurrentNewer;
@@ -98,7 +98,7 @@ internal sealed class UpdateDialog : Form
                 releasePage.Visible = true;
                 return;
             }
-            heading.Text = $"OeXYZ {Display(result.LatestVersion)} is available";
+            heading.Text = $"OeXYZ {result.LatestVersionText} is available";
             heading.ForeColor = Theme.BlueBright;
             message.Text = "Download the Windows ZIP. OeXYZ will accept it only when its SHA-256 hash matches the release manifest.";
             download.Visible = true;
@@ -124,7 +124,7 @@ internal sealed class UpdateDialog : Form
     {
         if (result is null) return;
         if (BrandMessageBox.Show(this,
-                $"Download, verify and install OeXYZ {Display(result.LatestVersion)}?\n\n" +
+                $"Download, verify and install OeXYZ {result.LatestVersionText}?\n\n" +
                 "The app will close, keep a rollback backup, replace both architecture-matched executables and restart. Updates are never silent.",
                 "Confirm OeXYZ update", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
@@ -137,7 +137,7 @@ internal sealed class UpdateDialog : Form
             progress.Visible = true;
             heading.Text = "Downloading and verifying";
             message.Text = "The archive is written to a temporary file until its SHA-256 checksum has been verified.";
-            string updateRoot = Path.Combine(AppPaths.Root, "updates", $"v{Display(result.LatestVersion)}");
+            string updateRoot = Path.Combine(AppPaths.Root, "updates", $"v{result.LatestVersionText}");
             string archive = Path.Combine(updateRoot, result.AssetName);
             string stage = Path.Combine(updateRoot, "stage");
             Directory.CreateDirectory(updateRoot);
@@ -199,9 +199,6 @@ internal sealed class UpdateDialog : Form
         versions.Text = string.Empty;
         download.Visible = false;
     }
-
-    private static string Display(Version value) =>
-        value.Build >= 0 ? $"{value.Major}.{value.Minor}.{value.Build}" : $"{value.Major}.{value.Minor}";
 
     protected override void Dispose(bool disposing)
     {

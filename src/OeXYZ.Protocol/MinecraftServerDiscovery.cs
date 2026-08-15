@@ -16,15 +16,18 @@ public sealed record MinecraftServerStatus(
 
 public static class MinecraftServerDiscovery
 {
+    internal const int MaximumVersionNameCharacters = 256;
+    internal const int MaximumDescriptionCharacters = 4_096;
+
     public static async Task<MinecraftServerStatus> QueryAsync(
         string address,
         int customPort = 0,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
-        ServerAddress endpoint = ServerAddress.Parse(address, customPort).ResolveSrv();
         using CancellationTokenSource timeoutSource = new(timeout ?? TimeSpan.FromSeconds(8));
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
+        ServerAddress endpoint = await ServerAddress.Parse(address, customPort).ResolveSrvAsync(linked.Token).ConfigureAwait(false);
         using TcpClient client = new() { NoDelay = true };
         Stopwatch stopwatch = Stopwatch.StartNew();
         await client.ConnectAsync(endpoint.NetworkHost, endpoint.Port, linked.Token).ConfigureAwait(false);
@@ -42,10 +45,21 @@ public static class MinecraftServerDiscovery
         if (response.Id != 0) throw new InvalidDataException("The server returned an invalid status packet.");
         PacketReader reader = new(response.Payload);
         string json = reader.ReadString(1_048_576);
+        int pingMilliseconds = checked((int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
+        return ParseResponse(endpoint, json, pingMilliseconds);
+    }
+
+    internal static MinecraftServerStatus ParseResponse(
+        ServerAddress endpoint,
+        string json,
+        int pingMilliseconds)
+    {
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
         JsonElement version = root.GetProperty("version");
-        string versionName = version.TryGetProperty("name", out JsonElement name) ? Clean(name.GetString()) : "Unknown";
+        string versionName = version.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String
+            ? NormalizeField(name.GetString(), MaximumVersionNameCharacters)
+            : "Unknown";
         int protocolVersion = version.TryGetProperty("protocol", out JsonElement protocol) && protocol.TryGetInt32(out int parsedProtocol)
             ? parsedProtocol
             : throw new InvalidDataException("The server status contains no protocol version.");
@@ -58,14 +72,14 @@ public static class MinecraftServerDiscovery
         }
         string description = root.TryGetProperty("description", out JsonElement descriptionElement)
             ? descriptionElement.ValueKind == JsonValueKind.String
-                ? Clean(descriptionElement.GetString())
-                : ChatTextCodec.FromJson(descriptionElement.GetRawText())
+                ? NormalizeField(descriptionElement.GetString(), MaximumDescriptionCharacters)
+                : LimitField(ChatTextCodec.FromJson(descriptionElement.GetRawText()), MaximumDescriptionCharacters)
             : string.Empty;
         byte[]? icon = root.TryGetProperty("favicon", out JsonElement favicon)
             ? TryReadServerIcon(favicon.GetString())
             : null;
         return new MinecraftServerStatus(endpoint, versionName, protocolVersion, online, maximum,
-            description, checked((int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue)), icon);
+            description, pingMilliseconds, icon);
     }
 
     private static byte[]? TryReadServerIcon(string? dataUrl)
@@ -90,20 +104,14 @@ public static class MinecraftServerDiscovery
         }
     }
 
-    private static string Clean(string? text)
+    private static string NormalizeField(string? text, int maximumCharacters) =>
+        LimitField(ChatTextCodec.ParseLegacy(text ?? string.Empty).Text, maximumCharacters);
+
+    private static string LimitField(string text, int maximumCharacters)
     {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        Span<char> buffer = stackalloc char[text.Length];
-        int written = 0;
-        for (int index = 0; index < text.Length; index++)
-        {
-            if (text[index] == '§' && index + 1 < text.Length)
-            {
-                index++;
-                continue;
-            }
-            buffer[written++] = text[index];
-        }
-        return new string(buffer[..written]);
+        if (text.Length <= maximumCharacters) return text;
+        int length = maximumCharacters;
+        if (length > 0 && char.IsHighSurrogate(text[length - 1])) length--;
+        return text[..length];
     }
 }

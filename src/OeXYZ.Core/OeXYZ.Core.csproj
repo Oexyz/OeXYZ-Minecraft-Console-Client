@@ -5,4 +5,7 @@
     <RootNamespace>OeXYZ.Core</RootNamespace>
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OeXYZ.Core.Tests" />
+  </ItemGroup>
 </Project>

@@ -9,4 +9,7 @@
     <ProjectReference Include="..\OeXYZ.Core\OeXYZ.Core.csproj" />
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OeXYZ.Session.Tests" />
+  </ItemGroup>
 </Project>

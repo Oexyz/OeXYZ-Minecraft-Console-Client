@@ -5,6 +5,95 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-15
+
+### Added
+
+- Self-contained single-file `linux-x64` and `linux-arm64` headless builds with
+  XDG paths, reversible `~/.local/bin` registration, profile/account/server
+  creation commands, JSON output, and an ANSI live dashboard.
+- Linux Microsoft Live device-code sign-in with one AES-256-GCM protected
+  account/session file, PBKDF2-SHA256 key derivation, private permissions,
+  explicit account-key generation, and no password handling.
+- Multi-session `supervise`, loopback `/health`, `/ready`, and `/status`,
+  SIGTERM shutdown, a local `doctor`, and systemd readiness/watchdog support.
+- Guided `oexyz setup` for streamlined Docker onboarding, repeatable
+  multi-account configuration, and persistent account/server session bindings
+  that `supervise` starts without environment-variable plumbing.
+- Pinned non-root AMD64/ARM64 Docker build, read-only Compose service, and
+  separate persistent config/state/key named volumes.
+- A per-user POSIX Linux installer with architecture detection, mandatory
+  SHA-256 verification, safe TAR validation, atomic replacement, optional
+  GitHub attestation verification, and optional systemd-unit installation.
+- Portable Linux DNS SRV resolution with bounded parsing, resolver timeouts,
+  compression-pointer loop protection, and deterministic fixtures.
+- CycloneDX 1.6 SBOM generation plus Linux/ARM64/container release workflow
+  artifacts and OCI provenance/SBOM publication.
+
+### Changed
+
+- Active session logs rotate at 16 MiB, CLI logs at 32 MiB, and all closed log
+  parts remain subject to the existing deterministic 300 MiB aggregate cap.
+- Profile documents are limited to 2 MiB/depth 64; offline names are validated
+  before networking; service session counts default to 16 and are hard-capped
+  at 128.
+- Runtime snapshots now expose bounded CPU/RAM, connectivity, HP/Food, XYZ,
+  ping, reconnect, packet, byte, and last-activity metrics without account IDs
+  or server addresses.
+- Runtime ping starts with the measured status-handshake RTT and switches to a
+  positive server-supplied player latency when available, preventing proxies
+  that publish a placeholder `0 ms` value from blanking a real measurement.
+- The ANSI dashboard now uses the full terminal height (instead of a fixed
+  ten-line history), keeps up to 500 recent local events, preserves complete
+  borders across resize, and redraws only changed padded rows to avoid flicker.
+- On Linux, `--config` now relocates only profiles/account storage while logs
+  and diagnostics continue to honor `XDG_STATE_HOME`, so Docker's separate
+  `/config` and `/state` volumes are used as documented.
+- Linux device authentication now pairs the Minecraft Java Live client ID with
+  Microsoft's Live device endpoint instead of the incompatible Entra/MSAL
+  endpoint. This fixes `AADSTS700016` while retaining the Windows browser,
+  Xbox, Minecraft-profile, and encrypted session pipeline.
+- Native Ubuntu hardware over SSH passed Microsoft session refresh, encrypted
+  online-mode Play, live public-chat receive, runtime metrics, and clean local
+  shutdown on a populated protocol-776 server without sending chat or commands.
+- Pull-only Compose now always refreshes the public GHCR `latest` image, while
+  an explicit no-pull override retains direct repository builds without silent
+  fallback. Release publication verifies the versioned manifest, pulls both
+  AMD64 and ARM64 images anonymously, and uses a fully queued, serialized job
+  to promote only the newest stable release to `latest` after its GitHub
+  release exists.
+- CI and Release multi-platform builds provision a commit-pinned Buildx action
+  with an explicit `docker-container` driver instead of relying on the default
+  Docker builder.
+
+### Fixed
+
+- Closed all nine P1 and nine P2 findings from the v1.3 repository audit. The
+  complete fix/test/platform matrix is recorded in the
+  [v1.3 bugfix report](docs/V1.3_BUGFIX_REPORT.md).
+- Hardened concurrent profile and Microsoft account transactions against stale
+  reloads, shared temporary names, duplicate first login, partial writes and
+  cross-process lost updates.
+- Bounded and sanitized server-controlled status, NBT chat, session/log,
+  diagnostics and GUI queues; secrets and terminal controls are removed before
+  persistent or interactive sinks.
+- Made GUI save/auth/shutdown failure paths rollback-safe, corrected
+  import-name and explicit-port boundaries, and made custom systemd installs
+  and installer temporary files safe for literal paths.
+
+### Security
+
+- Linux account/key/profile files use `0600`, directories use `0700`, the
+  account/session envelope uses an independent random salt and authenticated
+  encryption, and decrypted/key buffers are cleared after use.
+- Device codes bypass ordinary logs; Docker images contain no user profile,
+  token, account file, or key and run as UID/GID 1654 without capabilities.
+- Docker build contexts exclude ignored local account, session, profile, key,
+  runtime, and log files before any source is sent to a local or remote builder.
+- Linux account-store unlocking now completes before the dashboard starts its
+  keyboard reader, preventing competing console readers during hidden
+  passphrase entry; the temporary character buffer is explicitly cleared.
+
 ## [1.2.1] - 2026-08-14
 
 ### Security

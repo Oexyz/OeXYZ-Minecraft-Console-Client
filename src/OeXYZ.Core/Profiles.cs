@@ -73,12 +73,14 @@ public sealed record SessionBookmark
 
 public sealed record ProfileDocument
 {
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
     public int FormatVersion { get; init; } = CurrentFormatVersion;
+    public long Revision { get; set; }
     public List<AccountProfile> Accounts { get; init; } = [];
     public List<ServerProfile> Servers { get; init; } = [];
     public ApplicationSettings Settings { get; init; } = new();
+    public List<SessionBookmark> ManagedSessions { get; init; } = [];
     public List<SessionBookmark> LastSessions { get; init; } = [];
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalData { get; init; }
@@ -87,17 +89,25 @@ public sealed record ProfileDocument
     {
         if (FormatVersion > CurrentFormatVersion)
             throw new InvalidDataException($"Profile format {FormatVersion} is newer than this OeXYZ build supports.");
+        if (Revision < 0)
+            throw new InvalidDataException("The profile revision cannot be negative.");
 
-        List<AccountProfile> accounts = (Accounts ?? []).Where(account => account is not null).ToList();
-        List<ServerProfile> servers = (Servers ?? []).Where(server => server is not null)
+        List<AccountProfile> accounts = RequireItems(Accounts, "accounts")
+            .Select(NormalizeAccount)
+            .ToList();
+        List<ServerProfile> servers = RequireItems(Servers, "servers")
             .Select(NormalizeServer)
             .ToList();
+        EnsureUniqueProfiles(
+            accounts.Select(account => (account.Id, account.DisplayName)),
+            "account");
+        EnsureUniqueProfiles(
+            servers.Select(server => (server.Id, server.DisplayName)),
+            "server");
         HashSet<Guid> accountIds = accounts.Select(account => account.Id).ToHashSet();
         HashSet<Guid> serverIds = servers.Select(server => server.Id).ToHashSet();
-        List<SessionBookmark> sessions = (LastSessions ?? [])
-            .Where(item => accountIds.Contains(item.AccountId) && serverIds.Contains(item.ServerId))
-            .Distinct()
-            .ToList();
+        List<SessionBookmark> managedSessions = NormalizeSessions(ManagedSessions, accountIds, serverIds);
+        List<SessionBookmark> lastSessions = NormalizeSessions(LastSessions, accountIds, serverIds);
 
         return this with
         {
@@ -105,16 +115,49 @@ public sealed record ProfileDocument
             Accounts = accounts,
             Servers = servers,
             Settings = NormalizeSettings(Settings ?? new ApplicationSettings()),
-            LastSessions = sessions
+            ManagedSessions = managedSessions,
+            LastSessions = lastSessions
         };
+    }
+
+    private static AccountProfile NormalizeAccount(AccountProfile account)
+    {
+        if (account.Id == Guid.Empty)
+            throw new InvalidDataException("Account profile IDs cannot be empty.");
+        if (!Enum.IsDefined(account.Kind))
+            throw new InvalidDataException($"Account profile '{account.DisplayName}' has an unknown account kind.");
+        return account with
+        {
+            DisplayName = ProfileRules.NormalizeProfileName(account.DisplayName, "account"),
+            LoginHint = account.LoginHint?.Trim() ?? string.Empty
+        };
+    }
+
+    private static List<SessionBookmark> NormalizeSessions(
+        IEnumerable<SessionBookmark>? sessions,
+        HashSet<Guid> accountIds,
+        HashSet<Guid> serverIds)
+    {
+        List<SessionBookmark> items = RequireItems(sessions, "session bookmarks");
+        return items
+            .Where(item => accountIds.Contains(item.AccountId) && serverIds.Contains(item.ServerId))
+            .Distinct()
+            .ToList();
     }
 
     private static ServerProfile NormalizeServer(ServerProfile server)
     {
+        if (server.Id == Guid.Empty)
+            throw new InvalidDataException("Server profile IDs cannot be empty.");
+        if (server.CustomPort is < 0 or > 65535)
+            throw new InvalidDataException(
+                $"Server profile '{server.DisplayName}' has a custom port outside 0-65535.");
         int initial = Math.Clamp(server.ReconnectInitialDelaySeconds, 1, 300);
         int maximum = Math.Clamp(server.ReconnectMaximumDelaySeconds, initial, 3600);
         return server with
         {
+            DisplayName = ProfileRules.NormalizeProfileName(server.DisplayName, "server"),
+            Address = server.Address?.Trim() ?? string.Empty,
             Version = string.IsNullOrWhiteSpace(server.Version) ? "auto" : server.Version.Trim(),
             Group = server.Group?.Trim() ?? string.Empty,
             AntiAfkIntervalSeconds = Math.Clamp(server.AntiAfkIntervalSeconds, 10, 3600),
@@ -138,10 +181,38 @@ public sealed record ProfileDocument
         LogRetentionDays = settings.LogRetentionDays is 0 or 30 or 90 ? settings.LogRetentionDays : 90
     };
 
-    private static List<string> SanitizeCommands(IEnumerable<string>? commands, int maximum) =>
-        (commands ?? [])
-        .Select(command => command.Trim())
-        .Where(command => command.Length is > 0 and <= 256)
-        .Take(maximum)
-        .ToList();
+    private static List<string> SanitizeCommands(IEnumerable<string>? commands, int maximum)
+    {
+        List<string> items = RequireItems(commands, "commands");
+        return items
+            .Select(command => command.Trim())
+            .Where(command => command.Length is > 0 and <= 256)
+            .Take(maximum)
+            .ToList();
+    }
+
+    private static List<T> RequireItems<T>(IEnumerable<T>? source, string collectionName) where T : class
+    {
+        List<T> result = [];
+        foreach (T? item in source ?? [])
+        {
+            if (item is null)
+                throw new InvalidDataException($"The {collectionName} collection cannot contain null entries.");
+            result.Add(item);
+        }
+        return result;
+    }
+
+    private static void EnsureUniqueProfiles(IEnumerable<(Guid Id, string Name)> profiles, string profileKind)
+    {
+        HashSet<Guid> ids = [];
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((Guid id, string name) in profiles)
+        {
+            if (!ids.Add(id))
+                throw new InvalidDataException($"Duplicate {profileKind} profile ID '{id}'.");
+            if (!names.Add(name))
+                throw new InvalidDataException($"Duplicate {profileKind} profile name '{name}'.");
+        }
+    }
 }

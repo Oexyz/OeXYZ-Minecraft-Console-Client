@@ -1,11 +1,13 @@
 # Testing
 
-Last verified: **2026-08-14** on Windows 11 x64 with .NET SDK 10.0.302.
+Last verified: **2026-08-15** on Windows 11 x64 with .NET SDK 10.0.302, WSL2,
+Docker AMD64, native Ubuntu 26.04 x64, and native Ubuntu 24.04 ARM64.
 
 ## Deterministic tests
 
-Four dependency-free test executables validate profiles/reconnect/CLI policy,
-protocol parsing and replay, support-package sanitization, and the updater. No
+Six dependency-free test executables validate profiles/reconnect/CLI policy,
+protocol parsing and replay, support-package sanitization, authentication
+storage, terminal dashboard layout/rendering, and the updater. No
 normal test depends on an external Minecraft server:
 
 ```powershell
@@ -13,17 +15,36 @@ dotnet run --project tests/OeXYZ.Core.Tests -c Release
 dotnet run --project tests/OeXYZ.Protocol.Tests -c Release
 dotnet run --project tests/OeXYZ.ConsoleClient.Tests -c Release
 dotnet run --project tests/OeXYZ.Session.Tests -c Release
+dotnet run --project tests/OeXYZ.Authentication.Tests -c Release
+dotnet run --project tests/OeXYZ.Cli.Tests -c Release
 ```
 
-Expected results: `PASS: 12 core tests`, `PASS: 15 protocol tests`, `PASS: 5
-updater tests`, and one sanitized-support-package pass: **33 deterministic
-checks** total.
+Expected results: `PASS: 22 core tests`, `PASS: 20 protocol tests`, `PASS: 10
+updater tests` plus four GUI behavior tests, nine session checks, thirteen
+authentication checks, and eleven CLI checks: **89 deterministic .NET checks**
+total. The separate `tests/install-systemd.sh` regression adds **one shell
+installer test** (**90 checks overall**).
+
+The authentication suite specifically proves that the Minecraft Java public
+client ID is sent to the Microsoft Live device/token endpoints rather than the
+incompatible Entra/MSAL endpoint. It also covers pending and `slow_down`
+polling, hostile verification URLs, oversized responses, authenticated account
+storage, wrong keys, tampering, private key creation, one-time Linux store
+initialization, cancellation-safe interprocess locking, and parallel first
+login deduplication through durable profile-to-account bindings.
+
+The dashboard regression suite verifies that terminal height controls the
+visible history (more than ten rows at 120×30 and at least 35 at 156×47), the
+lower frame remains closed after resizing, sensitive input stays redacted, and
+steady-state refreshes overwrite only changed padded rows without a full-screen
+or per-row clear. This prevents the previous ten-line cap and visible flicker.
 
 The hardening suite covers invalid and overlong VarInts; negative, zero,
 oversized, truncated, and fragmented frames; a transport returning one byte per
-read; invalid UTF-8 and JSON; malformed/deep NBT; invalid UUIDs; malformed and
-over-expanding zlib data; invalid uncompressed-size declarations; abrupt
-encrypted EOF; duplicate packets; unexpected packets and invalid state calls.
+read; invalid UTF-8 and JSON; malformed/deep and allocation-amplifying NBT;
+invalid UUIDs; malformed and over-expanding zlib data; invalid uncompressed-size
+declarations; abrupt encrypted EOF; duplicate packets; unexpected packets and
+invalid state calls.
 The desired outcome is a bounded exception or readable placeholder—never an
 unbounded allocation, hang, deadlock, or process crash.
 
@@ -90,12 +111,94 @@ The six local servers used non-default ports from `25566` through `25571` to
 cover custom-port handling. Separate discovery checks verified the default port
 and DNS SRV resolution paths.
 
-## Public offline-mode compatibility
+## v1.3 Linux, service, and container qualification
 
-A passive test was performed against `play.minecraftanarchy.com`, whose public
-site describes the server as no-rules and provides offline/TLauncher joining
-guidance. A fresh unregistered test name was used. No account was registered,
-no password was supplied, and no chat or gameplay command was sent.
+The self-contained `linux-x64` binary was published locally, copied onto WSL2's
+ext4 filesystem, and executed without a system .NET runtime. CLI profile
+creation, JSON listing, `doctor`, XDG paths, a `0700` config directory, and a
+`0600` profile file passed. Linux DNS SRV resolved `play.minehut.com` to the
+advertised target and preserved the original handshake host.
+
+The final x64 single-file artifact was also copied by SSH to native Ubuntu
+26.04 x86_64 hardware. Its remote SHA-256 matched the local file. A real
+Microsoft Live device-code login completed with exit code 0, created only the
+AES-256-GCM `accounts.bin` account/session store at mode `0600`, and a second
+login refreshed silently with no new device prompt. A passive
+Microsoft-authenticated connection to `xenarchy.net` enabled Minecraft
+online-mode encryption, reached Login/Play/headless-connected state, sent zero
+chat messages and commands, reported no authentication/exception lines, and
+exited 0 through SIGINT. Temporary captured output was deleted immediately.
+
+The updated final binary was then run through SSH against `anarchy.ac`, whose
+published rules permit clients while prohibiting attacks on server stability.
+Status reported 15/100 players and 200 ms; the Play session verified the
+Microsoft account, enabled encryption, stayed connected for more than one
+minute, and received seven real public chat/join/leave events. The runtime ping
+changed to the server's positive 88 ms TAB latency while HP/Food, coordinates,
+traffic, and packet counters continued updating. The log contained zero sent
+chat messages and zero sent server commands, local `/quit` returned 0, and a
+new SSH check found no remaining OeXYZ process. Reviewed evidence is
+[v1.3-linux-premium-ssh.png](images/v1.3-linux-premium-ssh.png), SHA-256
+`E07D4539CFF22F2691803ED922D932FDDC184D7D08503A117C75F0076902C534`.
+
+On that same machine, a uniquely named transient `systemd --user` unit started
+the final `supervise --no-input` build. With user lingering already enabled, a
+separate new SSH connection still observed the unit as `active/running` and
+both loopback `/health` and `/ready` returned HTTP 200. The test unit was then
+stopped and collected; its port and process disappeared, and the count of
+pre-existing running user units returned unchanged. No existing service was
+modified or stopped.
+
+The systemd notifier was connected to a temporary Unix datagram socket. It sent
+`READY=1`, repeated watchdog notifications, and `STOPPING=1`, then exited 0 on
+SIGTERM. The supplied unit is separately checked with `systemd-analyze verify`.
+
+The pinned Docker image built and ran as UID/GID `1654:1654` with a read-only
+root and internal healthcheck. Its non-root process created a private key,
+offline account, and custom-port server profile in three persistent named
+volumes. Against the local official Minecraft 26.2 server, it reached Play,
+received its own chat echo, reported HP 20/Food 20 and packet/byte metrics,
+sent the native `/respawn`, answered health/status, and stopped through SIGTERM
+with exit code 0. The ARM64 output is a native AArch64 ELF and the isolated
+Buildx image reports `linux/arm64` with non-root UID/GID 1654. The final
+single-file `linux-arm64` CLI was additionally copied to native Ubuntu 24.04
+AArch64 hardware: its SHA-256 matched locally, `--help` ran, eight concurrent
+profile updates were retained, profile/key/lock files stayed `0600`, and an
+explicit port `0` returned exit 64. No service was inspected or changed. This
+Docker host still lacks an ARM64 QEMU/binfmt handler, and Raspberry Pi 3
+device-specific testing remains pending.
+
+The guided Docker onboarding was also exercised from an empty, isolated
+Compose project. One explicit source-path
+`docker compose -f docker-compose.yml -f docker-compose.build.yml run --rm oexyz setup`
+invocation created
+two offline accounts, one custom-port server, and two managed account/server
+bindings. A second one-off container read schema 4 from the supervisor's exact
+`/config/profiles.json` path and reported `2` accounts, `1` server, and `2`
+managed sessions. This caught and fixed an earlier XDG path mismatch. No
+Minecraft connection was made during this deterministic setup test, and the
+three project-scoped test volumes were verified by name before removal.
+
+The Linux installer passes POSIX `sh -n` and ShellCheck 0.10.0. It detects
+x64/ARM64, rejects 32-bit ARM, downloads only the official release path,
+requires the published SHA-256, rejects absolute/parent TAR paths, installs
+atomically without `sudo`, and optionally invokes GitHub attestation
+verification.
+
+The workflows pass actionlint 1.7.12 with only its currently unsupported
+`concurrency.queue` schema diagnostic excluded. The exact `queue: max` setting
+is covered by a repository regression and follows
+[GitHub's documented workflow syntax](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency);
+all remaining workflow diagnostics stay enabled.
+
+## Public offline-mode/cracked compatibility
+
+A real end-to-end test was performed against `play.minecraftanarchy.com`, whose
+public site describes the server as no-rules and provides offline/TLauncher
+joining guidance. A fresh random offline name was used. A one-time random
+registration value was generated in process and submitted manually once. It
+was never printed, persisted in the repository, or retained in command history;
+the console and log showed `/register [REDACTED]`.
 
 Observed result on protocol 776:
 
@@ -103,13 +206,34 @@ Observed result on protocol 776:
 2. TCP, compression, login, and configuration succeeded.
 3. The honest client brand `OeXYZ` was announced.
 4. Play state, position, and world-load acknowledgement succeeded.
-5. The server's `/register` prompt was received repeatedly.
-6. The session remained connected for the complete observation window.
+5. The server's `/register` prompt was received and the server confirmed
+   registration.
+6. A preliminary compatibility run sent one benign line manually; after the
+   request to remain passive, all screenshot/reconnect runs sent no chat.
+7. Real public join, death, and chat messages from other players were received.
+8. The final photographed run reported runtime ping 34 ms, HP 19, Food 20,
+   position `-162.5 / 66.0 / 322.5`, about 1.6 MiB / 3,658 received packets,
+   and 389 B / 33 sent protocol packets.
+9. The 156×47 dashboard displayed more than 30 history rows with a complete
+   frame. The incremental renderer did not clear unchanged rows.
+10. The final log contained zero `Chat sent:`, `/register`, or `/login` lines,
+    and the process shut down through Ctrl+C with exit code 0.
 
-The matching GUI evidence is [public-anarchy-connected.png](images/public-anarchy-connected.png).
+Reviewed v1.3 evidence is
+[v1.3-linux-public-chat.png](images/v1.3-linux-public-chat.png). Its SHA-256 at
+capture time was
+`172FAAB760955714FC5A2A642C5DABF3814F631821F2A747A5F4876FA05EF091`.
 The server is operated independently and is not affiliated with this project.
 
 ## Permitted public premium/hybrid checks
+
+A passive Microsoft-authenticated test was performed against
+[`anarchy.ac`](https://anarchy.ac/), whose published rules permit clients but
+prohibit crashing, lagging, or attacking the service. The native Ubuntu SSH
+run joined protocol 776 with the honest `OeXYZ` brand, received public chat,
+reported live ping/health/food/position/traffic data, and sent no chat or server
+command. Evidence is
+[v1.3-linux-premium-ssh.png](images/v1.3-linux-premium-ssh.png).
 
 A passive Microsoft-authenticated test was performed against `xenarchy.net`
 after checking its current [published rules](https://www.xenarchy.net/). The
@@ -128,6 +252,12 @@ required integer `pong`, the CLI remained connected for 82 seconds and exited
 cleanly on `/quit`; the GUI capture remained connected beyond one minute with
 live packet activity and public chat. No message or gameplay command was sent.
 Evidence is [v1.2-premium-public-chat.png](images/v1.2-premium-public-chat.png).
+
+Purity Vanilla's status endpoint remained reachable from the Ubuntu hardware
+and reported a real 324 ms RTT with 81 players online, but its login proxy
+classified that hosting address as a VPN and rejected Play login. The rejection
+was respected: no proxying, rotation, or other bypass was attempted, and no SSH
+screenshot is claimed for that failed login.
 
 To separate proxy behavior from the base protocol, the same final CLI build was
 also connected directly to `hardcoreanarchy.gay` (protocol 776, no advertised

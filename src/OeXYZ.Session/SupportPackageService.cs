@@ -20,19 +20,30 @@ public sealed record SupportPackageRequest(
 public static class SupportPackageService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly SemaphoreSlim[] DestinationLocks = Enumerable.Range(0, 64)
+        .Select(static _ => new SemaphoreSlim(1, 1))
+        .ToArray();
 
     public static async Task CreateAsync(SupportPackageRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.DestinationPath);
         string destination = Path.GetFullPath(request.DestinationPath);
         string? directory = Path.GetDirectoryName(destination);
-        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-        string temporary = destination + ".tmp";
+        if (!string.IsNullOrEmpty(directory)) PrivateFileSystem.EnsurePrivateDirectory(directory);
+        string temporary = $"{destination}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         try
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
             {
-                await using FileStream output = new(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                FileStreamOptions options = new()
+                {
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.ReadWrite,
+                    Share = FileShare.None,
+                    Options = FileOptions.Asynchronous | FileOptions.WriteThrough
+                };
+                if (!OperatingSystem.IsWindows())
+                    options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                await using FileStream output = new(temporary, options);
                 using (ZipArchive archive = new(output, ZipArchiveMode.Create, leaveOpen: true))
                 {
                     await WriteJsonAsync(archive, "environment.json", new
@@ -64,7 +75,9 @@ public static class SupportPackageService
                                 dnsError = exception.Message;
                             }
                         }
-                        ServerAddress endpoint = request.ResolveDns ? parsed.ResolveSrv() : parsed;
+                        ServerAddress endpoint = request.ResolveDns
+                            ? await parsed.ResolveSrvAsync(cancellationToken).ConfigureAwait(false)
+                            : parsed;
                         await WriteJsonAsync(archive, "server-profile.json", new
                         {
                             server.DisplayName,
@@ -95,11 +108,54 @@ public static class SupportPackageService
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 output.Flush(flushToDisk: true);
             }
-            File.Move(temporary, destination, overwrite: true);
+            SemaphoreSlim destinationLock = GetDestinationLock(destination);
+            await destinationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await MoveIntoPlaceAsync(temporary, destination, cancellationToken).ConfigureAwait(false);
+                PrivateFileSystem.ProtectFile(destination);
+            }
+            finally
+            {
+                destinationLock.Release();
+            }
         }
         finally
         {
             if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private static SemaphoreSlim GetDestinationLock(string destination)
+    {
+        StringComparer comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        uint hash = unchecked((uint)comparer.GetHashCode(destination));
+        return DestinationLocks[hash % (uint)DestinationLocks.Length];
+    }
+
+    private static async Task MoveIntoPlaceAsync(
+        string temporary,
+        string destination,
+        CancellationToken cancellationToken)
+    {
+        const int maximumAttempts = 80;
+        for (int attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.Move(temporary, destination, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (
+                OperatingSystem.IsWindows() &&
+                exception is IOException or UnauthorizedAccessException &&
+                attempt < maximumAttempts)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
