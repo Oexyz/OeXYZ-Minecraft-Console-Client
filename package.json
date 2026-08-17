@@ -6,6 +6,6 @@
     "generate:protocol": "node tools/protocol-catalog/generate.mjs"
   },
   "devDependencies": {
-    "minecraft-data": "3.113.0"
+    "minecraft-data": "3.113.1"
   }
 }
