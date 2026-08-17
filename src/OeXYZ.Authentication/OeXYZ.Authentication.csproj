@@ -10,7 +10,7 @@
     <ProjectReference Include="..\OeXYZ.Protocol\OeXYZ.Protocol.csproj" />
     <ProjectReference Include="..\OeXYZ.Session\OeXYZ.Session.csproj" />
     <PackageReference Include="CmlLib.Core.Auth.Microsoft" Version="3.3.1" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="OeXYZ.Authentication.Tests" />
