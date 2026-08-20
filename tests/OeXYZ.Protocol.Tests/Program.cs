@@ -32,6 +32,95 @@ Run("required packet maps", () =>
     True(latest.PacketIds.PlayClientbound.ContainsKey("player_info") || latest.PacketIds.PlayClientbound.ContainsKey("player_info_update"), "Current player-list packet is missing.");
 });
 
+Run("resource-pack capabilities and bounded decline codecs", () =>
+{
+    ProtocolCatalog catalog = ProtocolCatalog.LoadEmbedded();
+    Equal(ResourcePackRequestLayout.UrlHash, catalog.Resolve("1.8.8").ResourcePackRequestLayout);
+    Equal(ResourcePackResponseLayout.HashAndStatus, catalog.Resolve("1.8.8").ResourcePackResponseLayout);
+    Equal(ResourcePackRequestLayout.UrlHash, catalog.Resolve("1.12.2").ResourcePackRequestLayout);
+    Equal(ResourcePackResponseLayout.StatusOnly, catalog.Resolve("1.12.2").ResourcePackResponseLayout);
+    Equal(ResourcePackRequestLayout.UrlHashForcedPrompt, catalog.Resolve("1.19").ResourcePackRequestLayout);
+    Equal(ResourcePackRequestLayout.UrlHashForcedPrompt, catalog.Resolve("1.20.2").ResourcePackRequestLayout);
+    Equal(ResourcePackRequestLayout.UuidUrlHashForcedPrompt,
+        catalog.Resolve("1.20.3").ResourcePackRequestLayout);
+    Equal(ResourcePackResponseLayout.UuidAndStatus, catalog.Resolve("26.2").ResourcePackResponseLayout);
+    True(catalog.Versions.All(version =>
+            version.ResourcePackRequestLayout == ResourcePackRequestLayout.None ||
+            version.PacketIds.PlayServerbound.ContainsKey("resource_pack_receive") ||
+            version.PacketIds.ConfigurationServerbound.ContainsKey("resource_pack_receive")),
+        "A supported resource-pack request has no response packet ID.");
+
+    PacketWriter legacyPayload = new();
+    legacyPayload.WriteString("https://example.invalid/pack.zip");
+    legacyPayload.WriteString("0123456789abcdef");
+    ResourcePackRequest legacy = MinecraftConnection.ParseResourcePackRequest(
+        legacyPayload.ToArray(), ResourcePackRequestLayout.UrlHash);
+    True(!legacy.Forced && legacy.PackId is null, "Legacy resource-pack fields were misclassified.");
+    PacketWriter legacyResponse = new();
+    MinecraftConnection.WriteResourcePackDecline(
+        legacyResponse, legacy, ResourcePackResponseLayout.HashAndStatus);
+    PacketReader legacyReader = new(legacyResponse.ToArray());
+    Equal("0123456789abcdef", legacyReader.ReadString(128));
+    Equal((int)ResourcePackResponseStatus.Declined, legacyReader.ReadVarInt());
+
+    PacketWriter forcedPayload = new();
+    forcedPayload.WriteString("https://example.invalid/required.zip");
+    forcedPayload.WriteString("hash");
+    forcedPayload.WriteBoolean(true);
+    forcedPayload.WriteBoolean(true);
+    forcedPayload.WriteString("Required pack prompt");
+    ResourcePackRequest forced = MinecraftConnection.ParseResourcePackRequest(
+        forcedPayload.ToArray(), ResourcePackRequestLayout.UrlHashForcedPrompt);
+    True(forced.Forced, "A required resource pack was not recognized as forced.");
+    PacketWriter statusResponse = new();
+    MinecraftConnection.WriteResourcePackDecline(
+        statusResponse, forced, ResourcePackResponseLayout.StatusOnly);
+    PacketReader statusReader = new(statusResponse.ToArray());
+    Equal((int)ResourcePackResponseStatus.Declined, statusReader.ReadVarInt());
+
+    Guid packId = Guid.Parse("00112233-4455-6677-8899-aabbccddeeff");
+    PacketWriter uuidPayload = new();
+    uuidPayload.WriteUuid(packId);
+    uuidPayload.WriteString("https://example.invalid/current.zip");
+    uuidPayload.WriteString("hash");
+    uuidPayload.WriteBoolean(false);
+    uuidPayload.WriteBoolean(false);
+    ResourcePackRequest current = MinecraftConnection.ParseResourcePackRequest(
+        uuidPayload.ToArray(), ResourcePackRequestLayout.UuidUrlHashForcedPrompt);
+    PacketWriter uuidResponse = new();
+    MinecraftConnection.WriteResourcePackDecline(
+        uuidResponse, current, ResourcePackResponseLayout.UuidAndStatus);
+    PacketReader uuidReader = new(uuidResponse.ToArray());
+    Equal(packId, uuidReader.ReadUuid());
+    Equal((int)ResourcePackResponseStatus.Declined, uuidReader.ReadVarInt());
+
+    Throws<EndOfStreamException>(() => MinecraftConnection.ParseResourcePackRequest(
+        [0, 1, 2], ResourcePackRequestLayout.UuidUrlHashForcedPrompt));
+    PacketWriter longUrl = new();
+    longUrl.WriteString(new string('u', 8193));
+    longUrl.WriteString("hash");
+    Throws<InvalidDataException>(() => MinecraftConnection.ParseResourcePackRequest(
+        longUrl.ToArray(), ResourcePackRequestLayout.UrlHash));
+    PacketWriter longHash = new();
+    longHash.WriteString("https://example.invalid/pack.zip");
+    longHash.WriteString(new string('h', 129));
+    Throws<InvalidDataException>(() => MinecraftConnection.ParseResourcePackRequest(
+        longHash.ToArray(), ResourcePackRequestLayout.UrlHash));
+    PacketWriter longPrompt = new();
+    longPrompt.WriteString("https://example.invalid/pack.zip");
+    longPrompt.WriteString("hash");
+    longPrompt.WriteBoolean(false);
+    longPrompt.WriteBoolean(true);
+    longPrompt.WriteString(new string('p', 4097));
+    Throws<InvalidDataException>(() => MinecraftConnection.ParseResourcePackRequest(
+        longPrompt.ToArray(), ResourcePackRequestLayout.UrlHashForcedPrompt));
+    Throws<NotSupportedException>(() => MinecraftConnection.ParseResourcePackRequest(
+        [], ResourcePackRequestLayout.None));
+    Throws<NotSupportedException>(() => MinecraftConnection.RequireResourcePackResponseId([]));
+    Throws<NotSupportedException>(() => MinecraftConnection.WriteResourcePackDecline(
+        new PacketWriter(), current, ResourcePackResponseLayout.None));
+});
+
 Run("server address parsing", () =>
 {
     ServerAddress standard = ServerAddress.Parse("example.org");
@@ -79,8 +168,9 @@ Run("server status text is terminal-safe and field-bounded", () =>
 Run("portable DNS SRV parser is bounded and preserves target ports", () =>
 {
     const ushort transaction = 0x4F58;
+    const string question = "_minecraft._tcp.example.org";
     byte[] response = CreateSrvResponse(transaction, "srv.example.org", 25570);
-    IReadOnlyList<PortableSrvEndpoint> records = PortableSrvResolver.ParseResponse(response, transaction);
+    IReadOnlyList<PortableSrvEndpoint> records = PortableSrvResolver.ParseResponse(response, transaction, question);
     Equal(1, records.Count);
     Equal("srv.example.org", records[0].Target);
     Equal((ushort)25570, records[0].Port);
@@ -91,6 +181,60 @@ Run("portable DNS SRV parser is bounded and preserves target ports", () =>
     pointerLoop[targetOffset + 1] = (byte)targetOffset;
     Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(pointerLoop, transaction));
     Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(response.AsSpan(0, 10), transaction));
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(response, (ushort)(transaction + 1)));
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(response, transaction, "_minecraft._tcp.wrong.example"));
+
+    byte[] notResponse = response.ToArray();
+    notResponse[2] &= 0x7F;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(notResponse, transaction));
+    byte[] wrongOpcode = response.ToArray();
+    wrongOpcode[2] |= 0x08;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(wrongOpcode, transaction));
+    byte[] wrongType = response.ToArray();
+    int questionTypeOffset = PortableSrvResolver.BuildQuery(question, transaction).Length - 4;
+    wrongType[questionTypeOffset + 1] = 1;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(wrongType, transaction));
+    byte[] wrongClass = response.ToArray();
+    wrongClass[questionTypeOffset + 3] = 2;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(wrongClass, transaction));
+    byte[] nxdomain = response.ToArray();
+    nxdomain[3] = (byte)((nxdomain[3] & 0xF0) | 3);
+    Equal(0, PortableSrvResolver.ParseResponse(nxdomain, transaction).Count);
+    byte[] servfail = response.ToArray();
+    servfail[3] = (byte)((servfail[3] & 0xF0) | 2);
+    Equal(0, PortableSrvResolver.ParseResponse(servfail, transaction).Count);
+    byte[] truncated = response.ToArray();
+    truncated[2] |= 0x02;
+    Throws<IOException>(() => PortableSrvResolver.ParseResponse(truncated, transaction));
+    byte[] pointerOutside = response.ToArray();
+    pointerOutside[targetOffset] = 0xFF;
+    pointerOutside[targetOffset + 1] = 0xFF;
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(pointerOutside, transaction));
+    Equal(0, PortableSrvResolver.ParseResponse(
+        CreateSrvResponse(transaction, ".", 25570), transaction, question).Count);
+    Throws<InvalidDataException>(() => PortableSrvResolver.ParseResponse(new byte[4097], transaction));
+
+    PortableSrvEndpoint zero = new("zero.example", 25565, 0, 0);
+    PortableSrvEndpoint weighted = new("weighted.example", 25566, 0, 10);
+    PortableSrvEndpoint lowerPriority = new("later.example", 25567, 1, 100);
+    Equal(zero, PortableSrvResolver.Select([zero, weighted, lowerPriority], _ => 0));
+    Equal(weighted, PortableSrvResolver.Select([zero, weighted, lowerPriority], maximum => maximum - 1));
+    Equal(zero, PortableSrvResolver.Select([zero], _ => 0));
+
+    string resolvPath = Path.Combine(Path.GetTempPath(), "oexyz-resolv-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        File.WriteAllText(resolvPath, "nameserver 127.0.0.1\nnameserver ::1\n");
+        IReadOnlyList<IPAddress> resolvers = PortableSrvResolver.ReadNameServers(resolvPath);
+        True(resolvers.Contains(IPAddress.Loopback), "IPv4 DNS resolver was not parsed.");
+        True(resolvers.Contains(IPAddress.IPv6Loopback), "IPv6 DNS resolver was not parsed.");
+    }
+    finally { File.Delete(resolvPath); }
+});
+
+Run("portable DNS transport validates its source and TCP fallback", () =>
+{
+    VerifyDnsTransportAsync().GetAwaiter().GetResult();
 });
 
 Run("offline UUID compatibility", () =>
@@ -302,6 +446,11 @@ Run("connected socket disconnect completes", () =>
     VerifyConnectedDisconnectAsync().GetAwaiter().GetResult();
 });
 
+Run("connection phase deadlines and nonblocking code-of-conduct", () =>
+{
+    VerifyConnectionPhasesAsync().GetAwaiter().GetResult();
+});
+
 Run("invalid protocol state transitions are rejected", () =>
 {
     ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8.8");
@@ -434,6 +583,8 @@ static async Task VerifyConnectedDisconnectAsync()
         latencyFrame.WriteBytes(latencyBody);
         await stream.WriteAsync(latencyFrame.ToArray(), timeout.Token);
         await stream.WriteAsync(new byte[] { 1, 0x7F }, timeout.Token);
+        for (int packetId = 1000; packetId < 1300; packetId++)
+            await WriteMinecraftPacketAsync(stream, packetId, null, timeout.Token);
         await stream.FlushAsync(timeout.Token);
         await releaseServer.Task.WaitAsync(timeout.Token);
     }, timeout.Token);
@@ -446,10 +597,7 @@ static async Task VerifyConnectedDisconnectAsync()
             (ushort)port,
             "DisconnectTest",
             protocol,
-            initialPingMilliseconds: 321)
-        {
-            PacketInspectionEnabled = true
-        };
+            initialPingMilliseconds: 321);
         await connection.ConnectAsync(timeout.Token);
         Equal(ConnectionState.Play, connection.State);
         await WaitUntilAsync(() => connection.Players.Count == 1, TimeSpan.FromSeconds(2));
@@ -470,6 +618,11 @@ static async Task VerifyConnectedDisconnectAsync()
             TimeSpan.FromSeconds(2));
         True(connection.UnknownPacketStatistics.Any(item => item.Key.EndsWith("0x7F", StringComparison.Ordinal) && item.Value == 1),
             "The unexpected play packet was not recorded exactly once.");
+        await WaitUntilAsync(() => connection.UnknownPacketOverflowCount > 0, TimeSpan.FromSeconds(2));
+        True(connection.UnknownPacketStatistics.Count <= 256,
+            "Unknown packet keys exceeded their hard bound while inspection was disabled.");
+        True(connection.UnknownPacketOverflowCount > 0,
+            "Discarded unknown packet IDs were not represented by an overflow counter.");
 
         connection.Disconnect();
         connection.Disconnect();
@@ -515,10 +668,454 @@ static async Task VerifyFramingGuardsAsync()
 
     await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(new byte[] { 2, 1, 0xFF }, compressionThreshold: 2));
 
+    byte[] belowThreshold = CreateCompressionFrame(0, [0x01]);
+    InboundPacket below = await ReadPacketAsync(belowThreshold, compressionThreshold: 2);
+    Equal(1, below.Id);
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(
+        CreateCompressionFrame(0, [0x01, 0x00]), compressionThreshold: 2));
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(
+        CreateCompressionFrame(0, [0x01]), compressionThreshold: 0));
+
+    byte[] exactClear = [0x01, 0x02, 0x03, 0x04];
+    InboundPacket exact = await ReadPacketAsync(
+        CreateCompressionFrame(exactClear.Length, Compress(exactClear)), compressionThreshold: 1);
+    Equal(1, exact.Id);
+    True(exact.Payload.AsSpan().SequenceEqual(new byte[] { 2, 3, 4 }),
+        "Exactly sized decompression changed the packet.");
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(
+        CreateCompressionFrame(exactClear.Length + 1, Compress(exactClear)), compressionThreshold: 1));
+    byte[] truncatedDeflate = Compress(exactClear);
+    Array.Resize(ref truncatedDeflate, Math.Max(1, truncatedDeflate.Length / 2));
+    await ThrowsAsync<InvalidDataException>(() => ReadPacketAsync(
+        CreateCompressionFrame(exactClear.Length, truncatedDeflate), compressionThreshold: 1));
+
     await using MemoryStream encryptedSource = new();
     await using MinecraftPacketStream encryptedPackets = new(encryptedSource);
     encryptedPackets.EnableEncryption(new byte[16]);
     await ThrowsAsync<EndOfStreamException>(async () => { _ = await encryptedPackets.ReadAsync(CancellationToken.None); });
+}
+
+static async Task VerifyDnsTransportAsync()
+{
+    const ushort transaction = 0x4F59;
+    const string question = "_minecraft._tcp.example.org";
+    byte[] query = PortableSrvResolver.BuildQuery(question, transaction);
+
+    using (TcpListener tcp = new(IPAddress.Loopback, 0))
+    {
+        tcp.Start();
+        int port = ((IPEndPoint)tcp.LocalEndpoint).Port;
+        using UdpClient udp = new(port, AddressFamily.InterNetwork);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(3));
+        Task udpServer = Task.Run(async () =>
+        {
+            UdpReceiveResult request = await udp.ReceiveAsync(timeout.Token);
+            byte[] truncated = CreateSrvResponse(transaction, "srv.example.org", 25570);
+            truncated[2] |= 0x02;
+            await udp.SendAsync(truncated, request.RemoteEndPoint, timeout.Token);
+        }, timeout.Token);
+        Task tcpServer = Task.Run(async () =>
+        {
+            using TcpClient peer = await tcp.AcceptTcpClientAsync(timeout.Token);
+            NetworkStream stream = peer.GetStream();
+            byte[] lengthBytes = new byte[2];
+            await stream.ReadExactlyAsync(lengthBytes, timeout.Token);
+            int queryLength = (lengthBytes[0] << 8) | lengthBytes[1];
+            byte[] receivedQuery = new byte[queryLength];
+            await stream.ReadExactlyAsync(receivedQuery, timeout.Token);
+            True(receivedQuery.AsSpan().SequenceEqual(query), "DNS-over-TCP changed the original query.");
+            byte[] response = CreateSrvResponse(transaction, "srv.example.org", 25570);
+            await stream.WriteAsync(new byte[] { (byte)(response.Length >> 8), (byte)response.Length }, timeout.Token);
+            await stream.WriteAsync(response, timeout.Token);
+        }, timeout.Token);
+        IReadOnlyList<PortableSrvEndpoint> records = await PortableSrvResolver.QueryResolverAsync(
+            IPAddress.Loopback, port, question, transaction, query, timeout.Token);
+        Equal(1, records.Count);
+        Equal("srv.example.org", records[0].Target);
+        await Task.WhenAll(udpServer, tcpServer);
+    }
+
+    using (UdpClient expectedSource = new(0, AddressFamily.InterNetwork))
+    using (UdpClient wrongSource = new(0, AddressFamily.InterNetwork))
+    using (CancellationTokenSource timeout = new(TimeSpan.FromSeconds(3)))
+    {
+        int expectedPort = ((IPEndPoint)expectedSource.Client.LocalEndPoint!).Port;
+        Task responder = Task.Run(async () =>
+        {
+            UdpReceiveResult request = await expectedSource.ReceiveAsync(timeout.Token);
+            byte[] response = CreateSrvResponse(transaction, "srv.example.org", 25570);
+            await wrongSource.SendAsync(response, request.RemoteEndPoint, timeout.Token);
+        }, timeout.Token);
+        await ThrowsAsync<InvalidDataException>(() => PortableSrvResolver.QueryResolverAsync(
+            IPAddress.Loopback, expectedPort, question, transaction, query, timeout.Token));
+        await responder;
+    }
+
+    using (UdpClient silent = new(0, AddressFamily.InterNetwork))
+    using (CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(150)))
+    {
+        int port = ((IPEndPoint)silent.Client.LocalEndPoint!).Port;
+        await ThrowsAsync<OperationCanceledException>(() => PortableSrvResolver.QueryResolverAsync(
+            IPAddress.Loopback, port, question, transaction, query, cancellation.Token));
+    }
+}
+
+static async Task VerifyConnectionPhasesAsync()
+{
+    await VerifyLoginDeadlineAsync(sendCompression: false);
+    await VerifyLoginDeadlineAsync(sendCompression: true);
+    await VerifyConfigurationDeadlineAsync(sendKeepAlives: false);
+    await VerifyConfigurationDeadlineAsync(sendKeepAlives: true);
+    await VerifyUserCancellationAsync(configuration: false);
+    await VerifyUserCancellationAsync(configuration: true);
+    await VerifyConfigurationCompletesAsync();
+    await VerifyCodeOfConductDoesNotBlockAsync();
+    await VerifyCodeOfConductTimeoutAsync();
+    await VerifyCodeOfConductDuplicateAsync();
+    await VerifyCodeOfConductCancellationAsync();
+    await VerifyCodeOfConductOversizeAsync();
+}
+
+static async Task VerifyLoginDeadlineAsync(bool sendCompression)
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("1.8.8");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        if (sendCompression)
+        {
+            int compressionId = protocol.PacketIds.LoginClientbound["compress"];
+            await WriteMinecraftPacketAsync(stream, compressionId,
+                writer => writer.WriteVarInt(32), cancellationToken);
+        }
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(250),
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("DeadlineTest"), protocol, policy);
+        ConnectionPhaseTimeoutException exception = await CaptureThrowsAsync<ConnectionPhaseTimeoutException>(
+            () => connection.ConnectAsync(cancellationToken));
+        Equal(ConnectionPhase.Login, exception.Phase);
+        True(exception.Message.Contains("login", StringComparison.OrdinalIgnoreCase),
+            "The login timeout did not identify its phase.");
+    });
+}
+
+static async Task VerifyConfigurationDeadlineAsync(bool sendKeepAlives)
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        if (sendKeepAlives)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(40, cancellationToken);
+                await WriteMinecraftPacketAsync(stream,
+                    protocol.PacketIds.ConfigurationClientbound["keep_alive"],
+                    writer => writer.WriteLong(42), cancellationToken);
+            }
+        }
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConfigTimeout"), protocol, policy);
+        ConnectionPhaseTimeoutException exception = await CaptureThrowsAsync<ConnectionPhaseTimeoutException>(
+            () => connection.ConnectAsync(cancellationToken));
+        Equal(ConnectionPhase.Configuration, exception.Phase);
+        True(exception.Message.Contains("configuration", StringComparison.OrdinalIgnoreCase),
+            "The configuration timeout did not identify its phase.");
+    });
+}
+
+static async Task VerifyUserCancellationAsync(bool configuration)
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve(configuration ? "26.2" : "1.8.8");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        if (configuration)
+            await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+                cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("CancelTest"), protocol, policy);
+        using CancellationTokenSource userCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task connect = connection.ConnectAsync(userCancellation.Token);
+        await WaitUntilAsync(() => connection.State ==
+            (configuration ? ConnectionState.Configuration : ConnectionState.Login), TimeSpan.FromSeconds(2));
+        userCancellation.Cancel();
+        await ThrowsAsync<OperationCanceledException>(() => connect);
+        True(connection.TerminalException is not ConnectionPhaseTimeoutException,
+            "User cancellation was misclassified as a timeout.");
+    });
+}
+
+static async Task VerifyConfigurationCompletesAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await Task.Delay(40, cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["finish_configuration"], null, cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("PlayOnTime"), protocol, policy);
+        await connection.ConnectAsync(cancellationToken);
+        Equal(ConnectionState.Play, connection.State);
+        await Task.Delay(350, cancellationToken);
+        Equal(ConnectionState.Play, connection.State);
+        True(connection.TerminalException is null, "A completed phase left a timeout watchdog active.");
+        connection.Disconnect();
+    });
+}
+
+static async Task VerifyCodeOfConductDoesNotBlockAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    TaskCompletionSource sendConfigurationPackets = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<bool> approval = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await sendConfigurationPackets.Task.WaitAsync(cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["code_of_conduct"],
+            writer => writer.WriteString("Rules\u001b[2J\u2028safe"), cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["keep_alive"],
+            writer => writer.WriteLong(123456), cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["finish_configuration"], null, cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        string? displayed = null;
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConductTest"), protocol, policy);
+        connection.CodeOfConductApproval = (contents, _) =>
+        {
+            displayed = contents;
+            return approval.Task;
+        };
+        Task connect = connection.ConnectAsync(cancellationToken);
+        await WaitUntilAsync(() => connection.State == ConnectionState.Configuration, TimeSpan.FromSeconds(2));
+        await Task.Delay(50, cancellationToken);
+        long sentBefore = connection.Metrics.PacketsSent;
+        sendConfigurationPackets.TrySetResult();
+        await WaitUntilAsync(() => displayed is not null, TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => connection.Metrics.PacketsSent > sentBefore, TimeSpan.FromSeconds(2));
+        True(displayed is not null && IsTerminalSafe(displayed),
+            "The displayed code of conduct retained unsafe terminal controls.");
+        True(!connect.IsCompleted, "Configuration finished before the pending conduct decision was coordinated.");
+        approval.TrySetResult(true);
+        await connect.WaitAsync(TimeSpan.FromSeconds(2));
+        Equal(ConnectionState.Play, connection.State);
+        connection.Disconnect();
+    });
+}
+
+static async Task VerifyCodeOfConductTimeoutAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await Task.Delay(40, cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["code_of_conduct"],
+            writer => writer.WriteString("Bounded decision"), cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(200));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConductLimit"), protocol, policy);
+        connection.CodeOfConductApproval = (_, _) => new TaskCompletionSource<bool>().Task;
+        ConnectionPhaseTimeoutException exception = await CaptureThrowsAsync<ConnectionPhaseTimeoutException>(
+            () => connection.ConnectAsync(cancellationToken));
+        Equal(ConnectionPhase.CodeOfConductDecision, exception.Phase);
+    });
+}
+
+static async Task VerifyCodeOfConductDuplicateAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await Task.Delay(40, cancellationToken);
+        for (int index = 0; index < 2; index++)
+            await WriteMinecraftPacketAsync(stream,
+                protocol.PacketIds.ConfigurationClientbound["code_of_conduct"],
+                writer => writer.WriteString("One active request only"), cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConductDupe"), protocol, policy);
+        connection.CodeOfConductApproval = (_, _) => new TaskCompletionSource<bool>().Task;
+        await CaptureThrowsAsync<InvalidDataException>(() => connection.ConnectAsync(cancellationToken));
+    });
+}
+
+static async Task VerifyCodeOfConductCancellationAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    TaskCompletionSource promptOpened = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await Task.Delay(40, cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["code_of_conduct"],
+            writer => writer.WriteString("Cancel this decision"), cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConductCancel"), protocol, policy);
+        connection.CodeOfConductApproval = (_, _) =>
+        {
+            promptOpened.TrySetResult();
+            return new TaskCompletionSource<bool>().Task;
+        };
+        using CancellationTokenSource userCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task connect = connection.ConnectAsync(userCancellation.Token);
+        await promptOpened.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        userCancellation.Cancel();
+        await ThrowsAsync<OperationCanceledException>(() => connect);
+        True(connection.TerminalException is not ConnectionPhaseTimeoutException,
+            "Cancelling an open conduct dialog was misclassified as a timeout.");
+    });
+}
+
+static async Task VerifyCodeOfConductOversizeAsync()
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    await RunFakeServerAsync(async (stream, cancellationToken) =>
+    {
+        await WriteMinecraftPacketAsync(stream, protocol.PacketIds.LoginClientbound["success"], null,
+            cancellationToken);
+        await Task.Delay(40, cancellationToken);
+        await WriteMinecraftPacketAsync(stream,
+            protocol.PacketIds.ConfigurationClientbound["code_of_conduct"],
+            writer => writer.WriteString(new string('R', 16_385)), cancellationToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }, async (port, cancellationToken) =>
+    {
+        ConnectionDeadlinePolicy policy = new(
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        await using MinecraftConnection connection = new(
+            ServerAddress.Parse($"127.0.0.1:{port}"), MinecraftIdentity.Offline("ConductSize"), protocol, policy);
+        await CaptureThrowsAsync<InvalidDataException>(() => connection.ConnectAsync(cancellationToken));
+    });
+}
+
+static async Task RunFakeServerAsync(
+    Func<NetworkStream, CancellationToken, Task> serverHandler,
+    Func<int, CancellationToken, Task> clientHandler)
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(8));
+    Task server = Task.Run(async () =>
+    {
+        try
+        {
+            using TcpClient peer = await listener.AcceptTcpClientAsync(timeout.Token);
+            await serverHandler(peer.GetStream(), timeout.Token);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or SocketException or ObjectDisposedException)
+        {
+        }
+    }, timeout.Token);
+    try
+    {
+        await clientHandler(port, timeout.Token);
+    }
+    finally
+    {
+        timeout.Cancel();
+        listener.Stop();
+        await server.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+}
+
+static async Task WriteMinecraftPacketAsync(
+    NetworkStream stream,
+    int packetId,
+    Action<PacketWriter>? payload,
+    CancellationToken cancellationToken)
+{
+    PacketWriter body = new();
+    body.WriteVarInt(packetId);
+    payload?.Invoke(body);
+    PacketWriter frame = new();
+    frame.WriteVarInt(body.Length);
+    frame.WriteBytes(body.ToArray());
+    await stream.WriteAsync(frame.ToArray(), cancellationToken);
+    await stream.FlushAsync(cancellationToken);
+}
+
+static async Task<TException> CaptureThrowsAsync<TException>(Func<Task> action) where TException : Exception
+{
+    try { await action(); }
+    catch (TException exception) { return exception; }
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static byte[] CreateCompressionFrame(int uncompressedLength, byte[] bodyBytes)
+{
+    PacketWriter body = new();
+    body.WriteVarInt(uncompressedLength);
+    body.WriteBytes(bodyBytes);
+    PacketWriter frame = new();
+    frame.WriteVarInt(body.Length);
+    frame.WriteBytes(body.ToArray());
+    return frame.ToArray();
 }
 
 static async Task VerifyFragmentedFrameAsync()
@@ -597,13 +1194,17 @@ static byte[] CreateSrvResponse(ushort transaction, string target, ushort port)
     WriteUInt16(record, 0);
     WriteUInt16(record, 10);
     WriteUInt16(record, port);
-    foreach (string label in target.Split('.'))
+    if (target == ".")
+    {
+        record.Add(0);
+    }
+    else foreach (string label in target.Split('.'))
     {
         byte[] bytes = Encoding.ASCII.GetBytes(label);
         record.Add((byte)bytes.Length);
         record.AddRange(bytes);
     }
-    record.Add(0);
+    if (target != ".") record.Add(0);
     WriteUInt16(response, checked((ushort)record.Count));
     response.AddRange(record);
     return response.ToArray();

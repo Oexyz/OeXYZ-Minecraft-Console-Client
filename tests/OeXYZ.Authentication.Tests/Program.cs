@@ -10,6 +10,7 @@ using CmlLib.Core.Auth.Microsoft;
 using CmlLib.Core.Auth.Microsoft.Sessions;
 using OeXYZ.Authentication;
 using OeXYZ.Core;
+using OeXYZ.Session;
 using XboxAuthNet.Game.Accounts;
 using XboxAuthNet.Game.Accounts.JsonStorage;
 
@@ -440,6 +441,66 @@ try
         Equal(OperatingSystem.IsWindows() ? 0 : 1, calls);
         True(File.Exists(path), "Authentication preparation did not initialize the account store.");
         True(File.Exists(path + ".lock"), "Authentication preparation did not use the account-store lock.");
+    });
+
+    await RunAsync("silent reconnect never starts an interactive Microsoft flow", async () =>
+    {
+        string path = Path.Combine(root, "silent-only", "accounts.bin");
+        int devicePrompts = 0;
+        await using AuthenticationService authentication = new(
+            path,
+            (_, _) => ValueTask.FromResult(Encoding.UTF8.GetBytes("silent-only secure passphrase")),
+            prompt => { if (prompt is not null) devicePrompts++; });
+        AccountProfile profile = new()
+        {
+            DisplayName = "Silent-only test",
+            Kind = AccountKind.Microsoft,
+            LoginHint = "silent@example.invalid"
+        };
+        await ThrowsAsync<AuthenticationInteractionRequiredException>(() =>
+            authentication.GetIdentityAsync(
+                profile,
+                _ => { },
+                CancellationToken.None,
+                AuthenticationInteractionMode.SilentOnly));
+        Equal(0, devicePrompts);
+        True(File.Exists(path), "Silent-only authentication did not leave a valid protected empty store.");
+    });
+
+    await RunAsync("corrupt account storage is not misclassified as interactive consent", async () =>
+    {
+        string path = Path.Combine(root, "corrupt-silent", "accounts.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, [0x01, 0x02, 0x03, 0x04]);
+        await using AuthenticationService authentication = new(
+            path,
+            (_, _) => ValueTask.FromResult(Encoding.UTF8.GetBytes("corrupt-store secure passphrase")),
+            _ => { });
+        AccountProfile profile = new()
+        {
+            DisplayName = "Corrupt store",
+            Kind = AccountKind.Microsoft,
+            LoginHint = "corrupt@example.invalid"
+        };
+        bool rejected = false;
+        try
+        {
+            _ = await authentication.GetIdentityAsync(
+                profile,
+                _ => { },
+                CancellationToken.None,
+                AuthenticationInteractionMode.InteractiveAllowed);
+        }
+        catch (AuthenticationInteractionRequiredException exception)
+        {
+            throw new InvalidOperationException(
+                "A corrupt account store was incorrectly reported as requiring interaction.", exception);
+        }
+        catch (Exception)
+        {
+            rejected = true;
+        }
+        True(rejected, "A corrupt account store was accepted unexpectedly.");
     });
 }
 finally

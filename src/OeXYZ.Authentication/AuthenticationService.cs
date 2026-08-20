@@ -6,6 +6,8 @@ using OeXYZ.Core;
 using OeXYZ.Protocol;
 using OeXYZ.Session;
 using XboxAuthNet.Game.Accounts;
+using XboxAuthNet.OAuth;
+using XboxAuthNet.OAuth.CodeFlow;
 
 namespace OeXYZ.Authentication;
 
@@ -43,8 +45,10 @@ public sealed class AuthenticationService : IIdentityProvider, IAsyncDisposable
     public async Task<MinecraftIdentity> GetIdentityAsync(
         AccountProfile profile,
         Action<string> status,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AuthenticationInteractionMode interactionMode = AuthenticationInteractionMode.InteractiveAllowed)
     {
+        if (!Enum.IsDefined(interactionMode)) throw new ArgumentOutOfRangeException(nameof(interactionMode));
         if (profile.Kind == AccountKind.Offline)
         {
             ProfileRules.EnsureValidOfflineName(profile.LoginHint);
@@ -83,8 +87,12 @@ public sealed class AuthenticationService : IIdentityProvider, IAsyncDisposable
                             {
                                 throw;
                             }
-                            catch
+                            catch (Exception exception) when (RequiresInteraction(exception))
                             {
+                                if (interactionMode == AuthenticationInteractionMode.SilentOnly)
+                                    throw new AuthenticationInteractionRequiredException(
+                                        "Microsoft authentication requires a new interactive sign-in before reconnecting.",
+                                        exception);
                                 status(OperatingSystem.IsWindows()
                                     ? "Microsoft needs confirmation. Your browser will open securely."
                                     : "Microsoft needs confirmation. Follow the device sign-in instructions shown in this terminal.");
@@ -101,6 +109,9 @@ public sealed class AuthenticationService : IIdentityProvider, IAsyncDisposable
                         }
                         else
                         {
+                            if (interactionMode == AuthenticationInteractionMode.SilentOnly)
+                                throw new AuthenticationInteractionRequiredException(
+                                    "No protected Microsoft account session is available for silent reconnect.");
                             status(OperatingSystem.IsWindows()
                                 ? "Opening Microsoft sign-in in your default browser..."
                                 : "Starting Microsoft device sign-in. The temporary code is shown only in this terminal.");
@@ -153,6 +164,15 @@ public sealed class AuthenticationService : IIdentityProvider, IAsyncDisposable
         {
             authenticationLock.Release();
         }
+    }
+
+    private static bool RequiresInteraction(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is MicrosoftOAuthException or AuthCodeException) return true;
+        }
+        return false;
     }
 
     public async Task PrepareAsync(Action<string> status, CancellationToken cancellationToken)

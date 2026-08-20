@@ -93,7 +93,7 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
             {
                 int result = DnsQuery(query, 33, 0, IntPtr.Zero, out records, IntPtr.Zero);
                 if (result != 0 || records == IntPtr.Zero) return null;
-                List<(string Target, ushort Port, ushort Priority, ushort Weight)> candidates = [];
+                List<PortableSrvEndpoint> candidates = [];
                 for (IntPtr current = records; current != IntPtr.Zero;)
                 {
                     DnsRecord record = Marshal.PtrToStructure<DnsRecord>(current);
@@ -102,21 +102,17 @@ public sealed record ServerAddress(string HandshakeHost, string NetworkHost, ush
                         string? target = Marshal.PtrToStringUni(record.Data.Srv.Target);
                         string normalized = target?.TrimEnd('.') ?? string.Empty;
                         if (IsSafeHostText(normalized))
-                            candidates.Add((normalized, record.Data.Srv.Port, record.Data.Srv.Priority, record.Data.Srv.Weight));
+                            candidates.Add(new PortableSrvEndpoint(
+                                normalized,
+                                record.Data.Srv.Port,
+                                record.Data.Srv.Priority,
+                                record.Data.Srv.Weight));
                     }
                     current = record.Next;
                 }
                 if (candidates.Count == 0) return null;
-                ushort priority = candidates.Min(value => value.Priority);
-                var eligible = candidates.Where(value => value.Priority == priority).ToArray();
-                int totalWeight = eligible.Sum(value => value.Weight);
-                int ticket = totalWeight == 0 ? 0 : Random.Shared.Next(totalWeight);
-                foreach (var candidate in eligible)
-                {
-                    if (ticket < candidate.Weight || totalWeight == 0) return new SrvRecord(candidate.Target, candidate.Port);
-                    ticket -= candidate.Weight;
-                }
-                return new SrvRecord(eligible[^1].Target, eligible[^1].Port);
+                PortableSrvEndpoint selected = PortableSrvResolver.Select(candidates);
+                return new SrvRecord(selected.Target, selected.Port);
             }
             catch (DllNotFoundException)
             {

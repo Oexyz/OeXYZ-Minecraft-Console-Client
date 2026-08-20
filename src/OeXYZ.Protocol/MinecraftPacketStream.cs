@@ -53,6 +53,9 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
             ReadOnlySpan<byte> body = frameReader.ReadRemaining();
             if (uncompressedLength == 0)
             {
+                if (body.Length >= compressionThreshold)
+                    throw new InvalidDataException(
+                        "An uncompressed packet reached or exceeded the negotiated compression threshold.");
                 packetData = body.ToArray();
             }
             else
@@ -73,6 +76,10 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
                         throw new InvalidDataException("Compressed packet expands beyond its declared size.");
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                 }
+                int trailing = await inflater.ReadAsync(buffer.AsMemory(0, 1), cancellationToken)
+                    .ConfigureAwait(false);
+                if (trailing != 0)
+                    throw new InvalidDataException("Compressed packet expands beyond its declared size.");
                 packetData = output.ToArray();
                 if (packetData.Length != uncompressedLength)
                     throw new InvalidDataException("Compressed packet size did not match its declaration.");

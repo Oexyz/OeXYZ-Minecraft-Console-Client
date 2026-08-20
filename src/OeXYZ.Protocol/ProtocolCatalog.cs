@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OeXYZ.Protocol;
 
@@ -44,6 +45,11 @@ public sealed class ProtocolCatalog
         PropertyNameCaseInsensitive = true
     };
 
+    static ProtocolCatalog()
+    {
+        JsonOptions.Converters.Add(new JsonStringEnumConverter());
+    }
+
     private sealed record CatalogDocument(List<ProtocolDefinition> Versions);
 }
 
@@ -52,7 +58,35 @@ public sealed record ProtocolDefinition(
     int ProtocolVersion,
     string SchemaVersion,
     bool HasConfiguration,
+    ResourcePackRequestLayout ResourcePackRequestLayout,
+    ResourcePackResponseLayout ResourcePackResponseLayout,
     PacketIdGroups PacketIds);
+
+public enum ResourcePackRequestLayout
+{
+    None,
+    UrlHash,
+    UrlHashForcedPrompt,
+    UuidUrlHashForcedPrompt
+}
+
+public enum ResourcePackResponseLayout
+{
+    None,
+    HashAndStatus,
+    StatusOnly,
+    UuidAndStatus
+}
+
+public enum ResourcePackResponseStatus
+{
+    SuccessfullyLoaded = 0,
+    Declined = 1,
+    FailedDownload = 2,
+    Accepted = 3
+}
+
+internal sealed record ResourcePackRequest(Guid? PackId, string Hash, bool Forced);
 
 public sealed record PacketIdGroups(
     Dictionary<string, int> LoginClientbound,

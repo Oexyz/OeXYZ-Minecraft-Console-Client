@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using OeXYZ.Core;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -10,18 +11,26 @@ namespace OeXYZ.Protocol;
 
 public sealed class MinecraftConnection : IAsyncDisposable
 {
+    private const int MaximumUnknownPacketKeys = 256;
+    private const int MaximumResourcePackUrlCharacters = 8192;
+    private const int MaximumResourcePackHashCharacters = 128;
+    private const int MaximumResourcePackPromptCharacters = 4096;
     private readonly ProtocolDefinition protocol;
     private readonly string host;
     private readonly string handshakeHost;
     private readonly ushort port;
     private readonly MinecraftIdentity identity;
     private readonly MinecraftServicesClient servicesClient;
+    private readonly ConnectionDeadlinePolicy deadlines;
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource playReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource codeOfConductStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object playersLock = new();
     private readonly Dictionary<Guid, PlayerListEntry> players = [];
     private readonly object unknownPacketsLock = new();
     private readonly Dictionary<string, long> unknownPackets = new(StringComparer.Ordinal);
+    private readonly object codeOfConductLock = new();
     private TcpClient? tcpClient;
     private MinecraftPacketStream? packets;
     private Task? receiveTask;
@@ -40,6 +49,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private long packetsSent;
     private int pingMilliseconds = -1;
     private Exception? terminalException;
+    private long unknownPacketOverflow;
+    private Task? codeOfConductTask;
+    private bool finishConfigurationPending;
 
     public MinecraftConnection(
         string host,
@@ -58,7 +70,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ProtocolDefinition protocol,
         MinecraftServicesClient? servicesClient = null,
         int? initialPingMilliseconds = null)
-        : this(host, host, port, identity, protocol, servicesClient, initialPingMilliseconds)
+        : this(host, host, port, identity, protocol, servicesClient, initialPingMilliseconds,
+            ConnectionDeadlinePolicy.Default)
     {
     }
 
@@ -69,7 +82,19 @@ public sealed class MinecraftConnection : IAsyncDisposable
         MinecraftServicesClient? servicesClient = null,
         int? initialPingMilliseconds = null)
         : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient,
-            initialPingMilliseconds)
+            initialPingMilliseconds, ConnectionDeadlinePolicy.Default)
+    {
+    }
+
+    internal MinecraftConnection(
+        ServerAddress address,
+        MinecraftIdentity identity,
+        ProtocolDefinition protocol,
+        ConnectionDeadlinePolicy deadlines,
+        MinecraftServicesClient? servicesClient = null,
+        int? initialPingMilliseconds = null)
+        : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient,
+            initialPingMilliseconds, deadlines)
     {
     }
 
@@ -80,7 +105,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
         MinecraftServicesClient? servicesClient,
-        int? initialPingMilliseconds)
+        int? initialPingMilliseconds,
+        ConnectionDeadlinePolicy deadlines)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(handshakeHost);
@@ -94,6 +120,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         this.identity = identity;
         this.protocol = protocol;
         this.servicesClient = servicesClient ?? new MinecraftServicesClient();
+        this.deadlines = deadlines ?? throw new ArgumentNullException(nameof(deadlines));
+        deadlines.Validate();
         if (initialPingMilliseconds is < 0)
             throw new ArgumentOutOfRangeException(nameof(initialPingMilliseconds));
         pingMilliseconds = initialPingMilliseconds ?? -1;
@@ -110,6 +138,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public event Action<ConnectionMetrics>? MetricsChanged;
     public event Action<IReadOnlyList<PlayerListEntry>>? PlayerListChanged;
     public event Action<PacketTrace>? PacketTraced;
+    public event Action<string>? UnknownPacketObserved;
     public bool PacketInspectionEnabled { get; set; }
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
@@ -148,6 +177,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
     }
 
+    public long UnknownPacketOverflowCount => Interlocked.Read(ref unknownPacketOverflow);
+
     public void Disconnect()
     {
         if (Interlocked.Exchange(ref stopping, 1) == 0)
@@ -175,6 +206,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(reason);
         Interlocked.CompareExchange(ref terminalException, reason, null);
+        loginComplete.TrySetException(reason);
+        playReady.TrySetException(reason);
         Disconnect();
     }
 
@@ -185,8 +218,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
         TcpClient client = new() { NoDelay = true };
         tcpClient = client;
 
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
-        await client.ConnectAsync(host, port, linked.Token).ConfigureAwait(false);
+        await RunWithDeadlineAsync(
+            token => client.ConnectAsync(host, port, token).AsTask(),
+            ConnectionPhase.TcpConnect,
+            deadlines.TcpConnect,
+            cancellationToken).ConfigureAwait(false);
         packets = new MinecraftPacketStream(client.GetStream());
         packets.PacketWritten += OnPacketWritten;
         Log?.Invoke($"TCP connection established to {host}:{port}.");
@@ -197,12 +233,89 @@ public sealed class MinecraftConnection : IAsyncDisposable
             writer.WriteString(handshakeHost, 255);
             writer.WriteUnsignedShort(port);
             writer.WriteVarInt(2);
-        }, linked.Token).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
 
         SetState(ConnectionState.Login);
-        await SendLoginStartAsync(linked.Token).ConfigureAwait(false);
+        await SendLoginStartAsync(cancellationToken).ConfigureAwait(false);
         receiveTask = ReceiveLoopAsync(lifetime.Token);
-        await playReady.Task.WaitAsync(linked.Token).ConfigureAwait(false);
+        if (protocol.HasConfiguration)
+        {
+            await WaitWithDeadlineAsync(loginComplete.Task, ConnectionPhase.Login, deadlines.Login, cancellationToken)
+                .ConfigureAwait(false);
+            await WaitForConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await WaitWithDeadlineAsync(playReady.Task, ConnectionPhase.Login, deadlines.Login, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunWithDeadlineAsync(
+        Func<CancellationToken, Task> operation,
+        ConnectionPhase phase,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+        deadline.CancelAfter(timeout);
+        try
+        {
+            await operation(deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            !cancellationToken.IsCancellationRequested && !lifetime.IsCancellationRequested)
+        {
+            ConnectionPhaseTimeoutException exception = new(phase, timeout);
+            Abort(exception);
+            throw exception;
+        }
+    }
+
+    private Task WaitWithDeadlineAsync(
+        Task task,
+        ConnectionPhase phase,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        RunWithDeadlineAsync(token => task.WaitAsync(token), phase, timeout, cancellationToken);
+
+    private async Task WaitForConfigurationAsync(CancellationToken cancellationToken)
+    {
+        Stopwatch elapsed = Stopwatch.StartNew();
+        Task? completed = null;
+        await RunWithDeadlineAsync(async token =>
+        {
+            completed = await Task.WhenAny(playReady.Task, codeOfConductStarted.Task)
+                .WaitAsync(token).ConfigureAwait(false);
+        }, ConnectionPhase.Configuration, deadlines.Configuration, cancellationToken).ConfigureAwait(false);
+        elapsed.Stop();
+
+        if (ReferenceEquals(completed, playReady.Task))
+        {
+            await playReady.Task.ConfigureAwait(false);
+            return;
+        }
+
+        Task? decision;
+        lock (codeOfConductLock) decision = codeOfConductTask;
+        if (decision is null)
+            throw new InvalidOperationException("The code-of-conduct decision task was not initialized.");
+        TimeSpan remaining = deadlines.Configuration - elapsed.Elapsed;
+        if (remaining <= TimeSpan.Zero)
+        {
+            ConnectionPhaseTimeoutException exception = new(ConnectionPhase.Configuration, deadlines.Configuration);
+            Abort(exception);
+            throw exception;
+        }
+        await decision.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (playReady.Task.IsCompleted)
+        {
+            await playReady.Task.ConfigureAwait(false);
+            return;
+        }
+        await WaitWithDeadlineAsync(
+            playReady.Task, ConnectionPhase.Configuration, remaining, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SendChatAsync(string message, CancellationToken cancellationToken = default)
@@ -349,6 +462,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         catch (Exception exception)
         {
             Interlocked.CompareExchange(ref terminalException, exception, null);
+            loginComplete.TrySetException(exception);
             playReady.TrySetException(exception);
             ConnectionFaulted?.Invoke(exception);
             Log?.Invoke($"Connection ended: {exception.Message}");
@@ -413,6 +527,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             int acknowledgement = Require(protocol.PacketIds.LoginServerbound, "login_acknowledged");
             await packets!.WriteAsync(acknowledgement, null, cancellationToken).ConfigureAwait(false);
             SetState(ConnectionState.Configuration);
+            loginComplete.TrySetResult();
             await SendClientSettingsAsync(protocol.PacketIds.ConfigurationServerbound, cancellationToken).ConfigureAwait(false);
             await SendBrandAsync(protocol.PacketIds.ConfigurationServerbound, cancellationToken).ConfigureAwait(false);
         }
@@ -468,29 +583,38 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if (Is(inbound, "code_of_conduct", packet.Id))
         {
             PacketReader reader = new(packet.Payload);
-            string contents = reader.ReadString(262144);
+            string contents = TerminalTextSanitizer.Sanitize(reader.ReadString(16_384));
+            if (contents.Length > 16_384 || reader.Remaining != 0)
+                throw new InvalidDataException("The server code of conduct is outside safety limits.");
             Log?.Invoke("The server requires accepting its code of conduct.");
-            bool accepted = CodeOfConductApproval is not null &&
-                            await CodeOfConductApproval(contents, cancellationToken).ConfigureAwait(false);
-            if (!accepted) throw new IOException("The server code of conduct was not accepted.");
-            await packets!.WriteAsync(Require(protocol.PacketIds.ConfigurationServerbound, "accept_code_of_conduct"),
-                null, cancellationToken).ConfigureAwait(false);
-            Log?.Invoke("Server code of conduct accepted by the user.");
+            BeginCodeOfConductDecision(contents, cancellationToken);
             return;
         }
 
-        if (Is(inbound, "add_resource_pack", packet.Id))
+        if (Is(inbound, "resource_pack_send", packet.Id) || Is(inbound, "add_resource_pack", packet.Id))
         {
             await DeclineResourcePackAsync(packet.Payload, protocol.PacketIds.ConfigurationServerbound, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
 
+
+        if (Is(inbound, "remove_resource_pack", packet.Id))
+        {
+            HandleRemoveResourcePack(packet.Payload);
+            return;
+        }
+
         if (!Is(inbound, "finish_configuration", packet.Id)) return;
-        await packets!.WriteAsync(Require(protocol.PacketIds.ConfigurationServerbound, "finish_configuration"), null, cancellationToken).ConfigureAwait(false);
-        SetState(ConnectionState.Play);
-        Log?.Invoke($"Joined Minecraft {protocol.MinecraftVersion} (protocol {protocol.ProtocolVersion}).");
-        playReady.TrySetResult();
+        lock (codeOfConductLock)
+        {
+            if (codeOfConductTask is { IsCompleted: false })
+            {
+                finishConfigurationPending = true;
+                return;
+            }
+        }
+        await CompleteConfigurationAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task HandlePlayAsync(InboundPacket packet, CancellationToken cancellationToken)
@@ -541,10 +665,17 @@ public sealed class MinecraftConnection : IAsyncDisposable
             return;
         }
 
-        if (Is(inbound, "add_resource_pack", packet.Id))
+        if (Is(inbound, "resource_pack_send", packet.Id) || Is(inbound, "add_resource_pack", packet.Id))
         {
             await DeclineResourcePackAsync(packet.Payload, protocol.PacketIds.PlayServerbound, cancellationToken)
                 .ConfigureAwait(false);
+            return;
+        }
+
+
+        if (Is(inbound, "remove_resource_pack", packet.Id))
+        {
+            HandleRemoveResourcePack(packet.Payload);
             return;
         }
 
@@ -735,20 +866,166 @@ public sealed class MinecraftConnection : IAsyncDisposable
         Dictionary<string, int> responseIds,
         CancellationToken cancellationToken)
     {
-        PacketReader reader = new(payload);
-        Guid packId = reader.ReadUuid();
-        _ = reader.ReadString(32767);
-        _ = reader.ReadString(64);
-        bool forced = reader.ReadBoolean();
-        if (!responseIds.TryGetValue("resource_pack_receive", out int responseId)) return;
-        await packets!.WriteAsync(responseId, writer =>
-        {
-            writer.WriteUuid(packId);
-            writer.WriteVarInt(1);
-        }, cancellationToken).ConfigureAwait(false);
-        Log?.Invoke(forced
-            ? "The server requires a resource pack. It was declined because this client does not render visual assets."
+        ResourcePackRequest request = ParseResourcePackRequest(payload, protocol.ResourcePackRequestLayout);
+        int responseId = RequireResourcePackResponseId(responseIds);
+        await packets!.WriteAsync(responseId,
+            writer => WriteResourcePackDecline(writer, request, protocol.ResourcePackResponseLayout),
+            cancellationToken).ConfigureAwait(false);
+        Log?.Invoke(request.Forced
+            ? "The server requires a resource pack. It was declined because this client does not render visual assets; the server may disconnect this session."
             : "Optional server resource pack declined; this client does not render visual assets.");
+    }
+
+    internal static ResourcePackRequest ParseResourcePackRequest(
+        ReadOnlySpan<byte> payload,
+        ResourcePackRequestLayout layout)
+    {
+        PacketReader reader = new(payload);
+        Guid? packId = null;
+        string hash;
+        bool forced = false;
+        switch (layout)
+        {
+            case ResourcePackRequestLayout.UrlHash:
+                _ = reader.ReadString(MaximumResourcePackUrlCharacters);
+                hash = reader.ReadString(MaximumResourcePackHashCharacters);
+                break;
+            case ResourcePackRequestLayout.UrlHashForcedPrompt:
+                _ = reader.ReadString(MaximumResourcePackUrlCharacters);
+                hash = reader.ReadString(MaximumResourcePackHashCharacters);
+                forced = reader.ReadBoolean();
+                if (reader.ReadBoolean()) _ = reader.ReadString(MaximumResourcePackPromptCharacters);
+                break;
+            case ResourcePackRequestLayout.UuidUrlHashForcedPrompt:
+                packId = reader.ReadUuid();
+                _ = reader.ReadString(MaximumResourcePackUrlCharacters);
+                hash = reader.ReadString(MaximumResourcePackHashCharacters);
+                forced = reader.ReadBoolean();
+                if (reader.ReadBoolean())
+                {
+                    string prompt = ChatTextCodec.FromAnonymousNbt(ref reader);
+                    if (prompt.Length > MaximumResourcePackPromptCharacters)
+                        throw new InvalidDataException("The resource-pack prompt is too long.");
+                }
+                break;
+            case ResourcePackRequestLayout.None:
+            default:
+                throw new NotSupportedException("The resource-pack request layout is not supported.");
+        }
+        if (reader.Remaining != 0)
+            throw new InvalidDataException("The resource-pack request contains unexpected trailing data.");
+        return new ResourcePackRequest(packId, hash, forced);
+    }
+
+    internal static void WriteResourcePackDecline(
+        PacketWriter writer,
+        ResourcePackRequest request,
+        ResourcePackResponseLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(request);
+        switch (layout)
+        {
+            case ResourcePackResponseLayout.HashAndStatus:
+                writer.WriteString(request.Hash, MaximumResourcePackHashCharacters);
+                break;
+            case ResourcePackResponseLayout.StatusOnly:
+                break;
+            case ResourcePackResponseLayout.UuidAndStatus:
+                writer.WriteUuid(request.PackId ?? throw new InvalidDataException(
+                    "The resource-pack response requires a UUID that was not present."));
+                break;
+            case ResourcePackResponseLayout.None:
+            default:
+                throw new NotSupportedException("The resource-pack response layout is not supported.");
+        }
+        writer.WriteVarInt((int)ResourcePackResponseStatus.Declined);
+    }
+
+    internal static int RequireResourcePackResponseId(Dictionary<string, int> responseIds) =>
+        Require(responseIds, "resource_pack_receive");
+
+    private void HandleRemoveResourcePack(byte[] payload)
+    {
+        if (protocol.ResourcePackRequestLayout != ResourcePackRequestLayout.UuidUrlHashForcedPrompt)
+            throw new NotSupportedException("The remove-resource-pack layout is not supported for this protocol.");
+        PacketReader reader = new(payload);
+        if (reader.ReadBoolean()) _ = reader.ReadUuid();
+        if (reader.Remaining != 0)
+            throw new InvalidDataException("The remove-resource-pack packet contains unexpected trailing data.");
+        Log?.Invoke("The server removed a resource-pack reference; this client had not downloaded any assets.");
+    }
+
+    private void BeginCodeOfConductDecision(string contents, CancellationToken cancellationToken)
+    {
+        lock (codeOfConductLock)
+        {
+            if (codeOfConductTask is { IsCompleted: false })
+                throw new InvalidDataException("The server sent more than one active code-of-conduct request.");
+            codeOfConductTask = ProcessCodeOfConductDecisionAsync(contents, cancellationToken);
+            codeOfConductStarted.TrySetResult();
+        }
+    }
+
+    private async Task ProcessCodeOfConductDecisionAsync(string contents, CancellationToken cancellationToken)
+    {
+        try
+        {
+            bool accepted = false;
+            if (CodeOfConductApproval is not null)
+            {
+                using CancellationTokenSource deadline =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+                deadline.CancelAfter(deadlines.CodeOfConductDecision);
+                try
+                {
+                    Task<bool> approval = CodeOfConductApproval(contents, deadline.Token);
+                    accepted = await approval.WaitAsync(deadline.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (
+                    !cancellationToken.IsCancellationRequested && !lifetime.IsCancellationRequested)
+                {
+                    throw new ConnectionPhaseTimeoutException(
+                        ConnectionPhase.CodeOfConductDecision, deadlines.CodeOfConductDecision);
+                }
+            }
+
+            if (!accepted) throw new IOException("The server code of conduct was not accepted.");
+            await packets!.WriteAsync(
+                Require(protocol.PacketIds.ConfigurationServerbound, "accept_code_of_conduct"),
+                null,
+                cancellationToken).ConfigureAwait(false);
+            Log?.Invoke("Server code of conduct accepted by the user.");
+
+            bool finishPending;
+            lock (codeOfConductLock)
+            {
+                finishPending = finishConfigurationPending;
+                finishConfigurationPending = false;
+            }
+            if (finishPending) await CompleteConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested || cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            Abort(exception);
+            ConnectionFaulted?.Invoke(exception);
+            Log?.Invoke($"Connection ended: {exception.Message}");
+        }
+    }
+
+    private async Task CompleteConfigurationAsync(CancellationToken cancellationToken)
+    {
+        if (state != ConnectionState.Configuration) return;
+        await packets!.WriteAsync(
+            Require(protocol.PacketIds.ConfigurationServerbound, "finish_configuration"),
+            null,
+            cancellationToken).ConfigureAwait(false);
+        SetState(ConnectionState.Play);
+        Log?.Invoke($"Joined Minecraft {protocol.MinecraftVersion} (protocol {protocol.ProtocolVersion}).");
+        playReady.TrySetResult();
     }
 
     private async Task HandleEncryptionRequestAsync(byte[] payload, CancellationToken cancellationToken)
@@ -1094,7 +1371,6 @@ public sealed class MinecraftConnection : IAsyncDisposable
         int payloadBytes,
         int wireBytes)
     {
-        if (!PacketInspectionEnabled) return;
         Dictionary<string, int> mappings = (packetState, direction) switch
         {
             (ConnectionState.Login, PacketDirection.Clientbound) => protocol.PacketIds.LoginClientbound,
@@ -1115,8 +1391,18 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             string key = $"{packetState}:{direction}:0x{packetId:X2}";
             lock (unknownPacketsLock)
-                unknownPackets[key] = unknownPackets.GetValueOrDefault(key) + 1;
+            {
+                if (unknownPackets.TryGetValue(key, out long count)) unknownPackets[key] = count + 1;
+                else if (unknownPackets.Count < MaximumUnknownPacketKeys) unknownPackets[key] = 1;
+                else
+                {
+                    Interlocked.Increment(ref unknownPacketOverflow);
+                    key = "overflow";
+                }
+            }
+            UnknownPacketObserved?.Invoke(key);
         }
+        if (!PacketInspectionEnabled) return;
         PacketTraced?.Invoke(new PacketTrace(DateTimeOffset.Now, direction, packetState, packetId, name,
             payloadBytes, wireBytes, known));
     }
@@ -1148,6 +1434,12 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if (receiveTask is not null)
         {
             try { await receiveTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
+        }
+        Task? decisionTask;
+        lock (codeOfConductLock) decisionTask = codeOfConductTask;
+        if (decisionTask is not null)
+        {
+            try { await decisionTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
         }
         if (packets is not null) await packets.DisposeAsync().ConfigureAwait(false);
         lifetime.Dispose();

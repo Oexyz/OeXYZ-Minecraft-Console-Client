@@ -16,9 +16,16 @@ The user-triggered updater:
 5. extracts only bounded entries beneath a private staging folder;
 6. validates that both single-file frontends are present;
 7. asks before any download/install and never performs a silent update;
-8. starts a temporary copy of the current GUI, waits for clean shutdown,
-   preserves `.bak` rollback copies, replaces both executables, and restarts;
-9. restores already-replaced files from backup if a later replacement fails.
+8. starts a temporary copy of the current GUI, waits for clean shutdown, and
+   creates a unique transaction backup that records whether each frontend
+   existed before replacement;
+9. replaces both executables through transaction-scoped temporary files and
+   restarts only after both succeed;
+10. restores an existing frontend from that transaction's exact backup or
+    deletes a frontend that did not exist before the update when a later step
+    fails;
+11. aggregates and reports rollback/cleanup failures and rejects symbolic-link
+    or reparse-point update paths.
 
 GitHub attestations are verified independently with `gh attestation verify` as
 shown in the README. The application does not require or silently invoke the
@@ -31,5 +38,7 @@ override remains available only in Debug builds for maintainers testing a fork.
 
 The deterministic updater suite covers version normalization, release-source
 pinning, Debug override validation, successful and rejected hashes, Windows
-temporary-file lifetime, ZIP traversal rejection, and replacement with rollback
-copies.
+temporary-file lifetime, ZIP traversal rejection, every prior frontend
+existence combination, first/second replacement failures, partial rollback
+failure reporting, stale backups, repeated updates, and successful exact
+rollback.

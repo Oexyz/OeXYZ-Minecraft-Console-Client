@@ -96,6 +96,9 @@ so later service starts can authenticate silently without storing a password.
   declines packs because it does not render visual assets.
 - Newer servers may present a code of conduct. OeXYZ displays it and requires a
   deliberate Yes click; it is never accepted silently.
+- The code-of-conduct text is length-bounded and terminal-safe before display.
+  Its 120-second decision runs outside the network receive loop, allowing
+  mandatory Configuration keepalive and ping responses to continue.
 - Minecraft click events such as `run_command` are never executed. HTTP(S) URLs
   open only after a user clicks and confirms them.
 - Startup commands are opt-in, capped, delayed, non-repeating, and reject
@@ -104,6 +107,13 @@ so later service starts can authenticate silently without storing a password.
   the local profile file, so do not store passwords there.
 - Protocol inspection is disabled by default and records packet metadata only,
   never hexadecimal/raw payloads that could contain tokens or private chat.
+- Resource Pack request fields are schema-classified and bounded. URLs are
+  never opened, and URLs, hashes, prompts, and raw packets are not logged.
+  Optional and required packs are declined because OeXYZ renders no assets.
+- Automatic reconnect performs Microsoft refresh in silent-only mode. Only
+  recognized OAuth interaction states can permit an interactive flow during an
+  explicitly user-started connection; filesystem, decryption, and integrity
+  failures remain operational errors.
 - SHA-256 checks detect release corruption or mismatched assets but do not
   replace trust in the official GitHub repository and its owners. Release
   builds pin that repository and ignore repository overrides supplied through

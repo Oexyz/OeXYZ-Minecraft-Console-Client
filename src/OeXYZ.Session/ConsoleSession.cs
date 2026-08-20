@@ -1,7 +1,6 @@
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 using System.Net.Sockets;
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 
 namespace OeXYZ.Session;
@@ -63,6 +62,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     internal const int MaximumPendingLogLines = 1024;
     internal const int MaximumRecentDiagnosticLines = 200;
     internal const int MaximumRecentDiagnosticCharacters = 128 * 1024;
+    internal const int MaximumUnknownPacketKeys = 256;
     private readonly AccountProfile account;
     private readonly ServerProfile server;
     private readonly IIdentityProvider authentication;
@@ -73,6 +73,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly object stateLock = new();
     private readonly object diagnosticsLock = new();
+    private readonly object unknownPacketsLock = new();
     private readonly Channel<SessionLine> logLines = Channel.CreateBounded<SessionLine>(
         new BoundedChannelOptions(MaximumPendingLogLines)
         {
@@ -82,7 +83,7 @@ public sealed class ConsoleSession : IAsyncDisposable
         });
     private readonly Task logTask;
     private readonly Queue<string> recentDiagnostics = new();
-    private readonly ConcurrentDictionary<string, long> unknownPacketStatistics = new();
+    private readonly Dictionary<string, long> unknownPacketStatistics = new(StringComparer.Ordinal);
     private int recentDiagnosticCharacters;
     private MinecraftConnection? connection;
     private MinecraftIdentity? identity;
@@ -162,8 +163,13 @@ public sealed class ConsoleSession : IAsyncDisposable
     public Exception? LogException => Volatile.Read(ref logException);
     public Exception? FailureException => LogException ?? TerminalException;
     public Task Completion => runTask ?? Task.CompletedTask;
-    public IReadOnlyDictionary<string, long> UnknownPacketStatistics =>
-        new Dictionary<string, long>(unknownPacketStatistics);
+    public IReadOnlyDictionary<string, long> UnknownPacketStatistics
+    {
+        get
+        {
+            lock (unknownPacketsLock) return new Dictionary<string, long>(unknownPacketStatistics);
+        }
+    }
     public IReadOnlyList<string> RecentDiagnostics
     {
         get
@@ -230,6 +236,7 @@ public sealed class ConsoleSession : IAsyncDisposable
             TimeSpan.FromSeconds(server.ReconnectInitialDelaySeconds),
             TimeSpan.FromSeconds(server.ReconnectMaximumDelaySeconds));
         int consecutiveFailures = 0;
+        int connectionAttempts = 0;
         bool connectedBefore = false;
 
         try
@@ -246,6 +253,9 @@ public sealed class ConsoleSession : IAsyncDisposable
                 DateTimeOffset? connectedAt = null;
                 try
                 {
+                    if (connectionAttempts > 0 && account.Kind == AccountKind.Microsoft)
+                        await RefreshIdentityForReconnectAsync(cancellationToken).ConfigureAwait(false);
+                    connectionAttempts++;
                     SetNextReconnect(null);
                     SetStatus("DISCOVERING SERVER", SessionLineKind.Information);
                     (ServerAddress endpoint, ProtocolDefinition protocol, int? statusPingMilliseconds) =
@@ -371,9 +381,38 @@ public sealed class ConsoleSession : IAsyncDisposable
         {
             identity?.Certificate?.Dispose();
             SetNextReconnect(null);
-            SetStatus("DISCONNECTED", SessionLineKind.Error);
+            SetStatus("DISCONNECTED",
+                Volatile.Read(ref stopping) != 0 || cancellationToken.IsCancellationRequested
+                    ? SessionLineKind.Information
+                    : SessionLineKind.Error);
             ConnectedChanged?.Invoke(false);
         }
+    }
+
+    private async Task RefreshIdentityForReconnectAsync(CancellationToken cancellationToken)
+    {
+        SetStatus("REFRESHING AUTHENTICATION", SessionLineKind.Information);
+        string? previousAccountIdentifier = account.AccountIdentifier;
+        MinecraftIdentity refreshed = await authentication.GetIdentityAsync(
+            account,
+            AddInformation,
+            cancellationToken,
+            AuthenticationInteractionMode.SilentOnly).ConfigureAwait(false);
+        if (!string.Equals(previousAccountIdentifier, account.AccountIdentifier, StringComparison.Ordinal))
+            profilesChanged();
+
+        MinecraftIdentity? previous = identity;
+        if (refreshed.Certificate is null && previous?.Certificate is { } existingCertificate &&
+            existingCertificate.ExpiresAt > DateTimeOffset.UtcNow)
+        {
+            refreshed = refreshed with { Certificate = existingCertificate };
+        }
+        else if (previous?.Certificate is { } previousCertificate &&
+                 !ReferenceEquals(previousCertificate, refreshed.Certificate))
+        {
+            previousCertificate.Dispose();
+        }
+        identity = refreshed;
     }
 
     private async Task<(ServerAddress Address, ProtocolDefinition Protocol, int? StatusPingMilliseconds)> DiscoverAsync(
@@ -407,6 +446,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     {
         active.PacketInspectionEnabled = PacketInspectionEnabled;
         active.CodeOfConductApproval = CodeOfConductApproval;
+        active.UnknownPacketObserved += RecordUnknownPacket;
         active.Log += AddInformation;
         active.ChatReceived += OnChatReceived;
         active.Died += () => OnDeath(active, cancellationToken);
@@ -438,13 +478,26 @@ public sealed class ConsoleSession : IAsyncDisposable
         };
         if (PacketInspectionEnabled) active.PacketTraced += trace =>
         {
-            if (!trace.Known)
-            {
-                string key = $"{trace.State}:{trace.Direction}:0x{trace.PacketId:X2}";
-                unknownPacketStatistics.AddOrUpdate(key, 1, (_, count) => count + 1);
-            }
             PacketTraced?.Invoke(trace);
         };
+    }
+
+    private void RecordUnknownPacket(string key)
+    {
+        lock (unknownPacketsLock)
+        {
+            if (string.Equals(key, "overflow", StringComparison.Ordinal))
+            {
+                unknownPacketStatistics["overflow"] = unknownPacketStatistics.GetValueOrDefault("overflow") + 1;
+                return;
+            }
+            if (unknownPacketStatistics.ContainsKey(key) || unknownPacketStatistics.Count < MaximumUnknownPacketKeys)
+            {
+                unknownPacketStatistics[key] = unknownPacketStatistics.GetValueOrDefault(key) + 1;
+                return;
+            }
+            unknownPacketStatistics["overflow"] = unknownPacketStatistics.GetValueOrDefault("overflow") + 1;
+        }
     }
 
     private async Task RunStartupCommandsAsync(MinecraftConnection active, CancellationToken cancellationToken)

@@ -10,9 +10,9 @@ const packageInfo = require('minecraft-data/package.json')
 const selectedNames = {
   loginClientbound: ['disconnect', 'encryption_begin', 'success', 'compress', 'login_plugin_request', 'cookie_request'],
   loginServerbound: ['login_start', 'encryption_begin', 'login_plugin_response', 'login_acknowledged', 'cookie_response'],
-  configurationClientbound: ['custom_payload', 'disconnect', 'finish_configuration', 'keep_alive', 'ping', 'registry_data', 'select_known_packs', 'cookie_request', 'store_cookie', 'transfer', 'kick_disconnect', 'code_of_conduct', 'add_resource_pack', 'remove_resource_pack'],
+  configurationClientbound: ['custom_payload', 'disconnect', 'finish_configuration', 'keep_alive', 'ping', 'registry_data', 'select_known_packs', 'cookie_request', 'store_cookie', 'transfer', 'kick_disconnect', 'code_of_conduct', 'resource_pack_send', 'add_resource_pack', 'remove_resource_pack'],
   configurationServerbound: ['client_information', 'settings', 'custom_payload', 'finish_configuration', 'keep_alive', 'pong', 'select_known_packs', 'cookie_response', 'resource_pack_receive', 'accept_code_of_conduct'],
-  playClientbound: ['login', 'keep_alive', 'kick_disconnect', 'position', 'chat', 'system_chat', 'player_chat', 'profileless_chat', 'update_health', 'death_combat_event', 'respawn', 'start_configuration', 'ping', 'player_info', 'player_info_update', 'player_info_remove', 'player_remove', 'add_resource_pack', 'remove_resource_pack'],
+  playClientbound: ['login', 'keep_alive', 'kick_disconnect', 'position', 'chat', 'system_chat', 'player_chat', 'profileless_chat', 'update_health', 'death_combat_event', 'respawn', 'start_configuration', 'ping', 'player_info', 'player_info_update', 'player_info_remove', 'player_remove', 'resource_pack_send', 'add_resource_pack', 'remove_resource_pack'],
   playServerbound: ['keep_alive', 'teleport_confirm', 'settings', 'client_information', 'custom_payload', 'chat', 'chat_message', 'chat_command', 'chat_session_update', 'client_command', 'client_status', 'position', 'position_look', 'configuration_acknowledged', 'player_loaded', 'pong', 'resource_pack_receive']
 }
 
@@ -28,6 +28,60 @@ function subset (mapping, names) {
   const result = {}
   for (const name of names) if (Object.hasOwn(mapping, name)) result[name] = mapping[name]
   return result
+}
+
+function packetSchema (data, state, direction, packetName) {
+  const localTypes = data?.protocol?.[state]?.[direction]?.types ?? {}
+  const packet = localTypes.packet
+  const fields = packet?.[1]
+  const parameters = Array.isArray(fields) ? fields.find(field => field?.name === 'params') : null
+  const typeName = parameters?.type?.[1]?.fields?.[packetName]
+  if (!typeName) return null
+  return localTypes[typeName] ?? data?.protocol?.types?.[typeName] ?? null
+}
+
+function containerFieldNames (schema) {
+  if (!Array.isArray(schema) || schema[0] !== 'container' || !Array.isArray(schema[1])) return null
+  return schema[1].map(field => field?.name)
+}
+
+function classifyResourcePackRequest (data, packetIds) {
+  const layouts = new Set()
+  for (const [state, ids] of [
+    ['configuration', packetIds.configurationClientbound],
+    ['play', packetIds.playClientbound]
+  ]) {
+    const packetName = Object.hasOwn(ids, 'add_resource_pack')
+      ? 'add_resource_pack'
+      : Object.hasOwn(ids, 'resource_pack_send') ? 'resource_pack_send' : null
+    if (!packetName) continue
+    const names = containerFieldNames(packetSchema(data, state, 'toClient', packetName))
+    const signature = JSON.stringify(names)
+    if (signature === JSON.stringify(['url', 'hash'])) layouts.add('UrlHash')
+    else if (signature === JSON.stringify(['url', 'hash', 'forced', 'promptMessage'])) layouts.add('UrlHashForcedPrompt')
+    else if (signature === JSON.stringify(['uuid', 'url', 'hash', 'forced', 'promptMessage'])) layouts.add('UuidUrlHashForcedPrompt')
+    else throw new Error(`Unknown ${state} resource-pack request layout: ${signature}`)
+  }
+  if (layouts.size > 1) throw new Error(`Conflicting resource-pack request layouts: ${[...layouts].join(', ')}`)
+  return [...layouts][0] ?? 'None'
+}
+
+function classifyResourcePackResponse (data, packetIds) {
+  const layouts = new Set()
+  for (const [state, ids] of [
+    ['configuration', packetIds.configurationServerbound],
+    ['play', packetIds.playServerbound]
+  ]) {
+    if (!Object.hasOwn(ids, 'resource_pack_receive')) continue
+    const names = containerFieldNames(packetSchema(data, state, 'toServer', 'resource_pack_receive'))
+    const signature = JSON.stringify(names)
+    if (signature === JSON.stringify(['hash', 'result'])) layouts.add('HashAndStatus')
+    else if (signature === JSON.stringify(['result'])) layouts.add('StatusOnly')
+    else if (signature === JSON.stringify(['uuid', 'result'])) layouts.add('UuidAndStatus')
+    else throw new Error(`Unknown ${state} resource-pack response layout: ${signature}`)
+  }
+  if (layouts.size > 1) throw new Error(`Conflicting resource-pack response layouts: ${[...layouts].join(', ')}`)
+  return [...layouts][0] ?? 'None'
 }
 
 function schemaFor (entry) {
@@ -58,11 +112,18 @@ for (const entry of releases) {
     playClientbound: subset(mappingFor(data, 'play', 'toClient'), selectedNames.playClientbound),
     playServerbound: subset(mappingFor(data, 'play', 'toServer'), selectedNames.playServerbound)
   }
+  const resourcePackRequestLayout = classifyResourcePackRequest(data, packetIds)
+  const resourcePackResponseLayout = classifyResourcePackResponse(data, packetIds)
+  if (resourcePackRequestLayout !== 'None' && resourcePackResponseLayout === 'None') {
+    throw new Error(`Minecraft ${entry.minecraftVersion} has a resource-pack request but no response packet`)
+  }
   versions.push({
     minecraftVersion: entry.minecraftVersion,
     protocolVersion: entry.version,
     schemaVersion: schema.schemaVersion,
     hasConfiguration: Boolean(data.protocol.configuration),
+    resourcePackRequestLayout,
+    resourcePackResponseLayout,
     packetIds
   })
 }

@@ -54,6 +54,13 @@ frames, five-byte continuation VarInts, one-byte TCP fragmentation, malformed
 UTF-8/JSON/NBT/compression/encryption, unexpected states, duplicates, and
 abrupt EOF.
 
+The generated catalog also carries explicit Resource Pack request and response
+layouts. The generator derives their field signatures from the pinned schema
+and fails if any supported request cannot be classified. Runtime parsing never
+guesses a version boundary: legacy URL/hash, forced/prompt, and UUID layouts are
+decoded through the capability, bounded, declined through a typed status, and
+never downloaded.
+
 The opt-in protocol inspector receives immutable packet metadata only:
 timestamp, direction, state, ID, known name, payload length, and wire length.
 It does not expose raw payloads or decoded authentication fields. Unknown packet
@@ -69,6 +76,12 @@ extreme disk stall the oldest queued log event is discarded rather than
 allowing unbounded RAM growth. No reconnect attempt retains a
 socket or handler after disposal. Ctrl+C, GUI Disconnect, tab Close, and process
 exit all converge on the same cancellation path.
+
+Connection setup uses independent deadlines: TCP connect 15 seconds, login 45
+seconds, Configuration 60 seconds, and a code-of-conduct decision 120 seconds.
+The conduct prompt runs outside the receive loop, so Configuration keepalives
+and pings continue while the UI decides. A pending finish-Configuration packet
+is represented by one bounded flag rather than buffered packets.
 
 Both frontends apply age retention at startup and once per minute, followed by
 a hard 300 MB aggregate cap. Active session logs rotate at 16 MiB and CLI log
@@ -90,6 +103,12 @@ OeXYZ never handles a Microsoft password. A device user code is sent only to a
 terminal presenter and is deliberately excluded from ordinary session and file
 logs. The resulting Minecraft token is used only for Mojang session join and
 secure-chat certificate requests.
+
+The first user-started connection permits interaction. Every automatic
+Microsoft reconnect is `SilentOnly`: it refreshes the protected session and
+secure-chat certificate under the existing authentication lock, swaps identity
+state only after success, and never opens a browser or device-code flow. Offline
+identity is constructed once per session lifecycle.
 
 On Windows, refreshable sessions are one DPAPI `CurrentUser` payload in
 `accounts.bin`. On Linux, a user-controlled passphrase/key is processed with
@@ -141,6 +160,11 @@ published SHA-256 in fixed time, rejects overlarge or path-traversal entries,
 and stages both executables. After confirmation a temporary copy of the current
 GUI waits for shutdown, backs up installed executables, replaces them through
 temporary files, rolls back completed replacements on failure, and restarts.
+
+Each installation attempt owns a unique backup directory and records whether
+each frontend existed before the transaction. Rollback restores that exact
+backup or deletes a newly introduced frontend, aggregates rollback failures,
+removes transaction-scoped temporary files, and rejects reparse-point paths.
 
 Updates are never silent. Releases are not Authenticode-signed. The GitHub
 workflow separately creates provenance attestations; users verify those with

@@ -5,6 +5,52 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-21
+
+### Fixed
+
+- Generated and enforced schema-derived Resource Pack request/response layouts
+  across the complete protocol catalog, including legacy hash responses,
+  status-only responses, modern UUID responses, bounded fields, safe remove
+  packets, and explicit decline behavior without downloading assets.
+- Added distinct 15-second TCP, 45-second login, 60-second Configuration, and
+  120-second code-of-conduct decision deadlines while preserving user
+  cancellation and transient reconnect classification.
+- Moved code-of-conduct decisions off the receive loop so Configuration
+  keepalives and pings remain responsive; duplicate, expired, cancelled, and
+  finish-Configuration races now terminate or coordinate deterministically.
+- Automatic Microsoft reconnects now use silent refresh only, fetch a fresh
+  secure-chat certificate, retain the previous certificate until replacement,
+  and stop with a reauthentication message instead of launching a browser or
+  device-code loop.
+- Made GUI/CLI replacement a unique transaction with exact pre-existence
+  tracking, rollback deletion for newly introduced files, aggregated rollback
+  failures, transaction-scoped temporary files, and reparse-point rejection.
+- Hardened portable DNS SRV parsing and transport validation, including the
+  response source, question, opcode/class/type, bounded counts, pointer loops,
+  root targets, RFC-weighted selection, cancellation, timeouts, and TCP
+  fallback for truncated UDP responses.
+- Enforced negotiated compression thresholds for uncompressed packets and
+  rejected short, long, or trailing decompressed output.
+- Counted unknown packet IDs even when tracing is disabled, with 256 distinct
+  keys plus an overflow counter, and represented deliberate stops as a normal
+  disconnected state.
+
+### Changed
+
+- Centralized the default product version in `Directory.Build.props`; release
+  builds may still override it with `-p:Version`.
+- Replaced the manually maintained README test-count badge with a stable CI
+  statement and expanded CI validation for Resource Pack capabilities.
+
+### Security
+
+- Resource Pack URLs, hashes, prompts, and payloads remain absent from logs;
+  required packs are declined because the renderer-free client cannot use
+  their assets and the user is warned that the server may disconnect.
+- Authentication storage, decryption, and integrity errors no longer fall
+  through to interactive Microsoft sign-in.
+
 ## [1.3.0] - 2026-08-15
 
 ### Added
