@@ -11,6 +11,7 @@ runtime/
 .integration/
 .vs/
 .vscode/
+.projectatlas/
 artifacts/
 bin/
 obj/

@@ -269,6 +269,66 @@ still live after 18 seconds and `/quit` returned 0. The status response reported
 These are narrow compatibility observations, not guarantees of future access
 or permission for unattended play. Users must re-check each server's rules.
 
+## v1.3.1 compatibility and reliability verification
+
+The v1.3.1 hotfix was exercised against official, checksum-verified Vanilla
+server JARs downloaded through Mojang's version manifest. Every server bound
+only to `127.0.0.1`, used an isolated offline test identity, and was stopped
+after the run. Microsoft OpenJDK 21/25 and Eclipse Temurin 8 were unpacked into
+the temporary test root rather than installed system-wide.
+
+| Host | Architecture | Mode | Server class | MC version | Protocol | Duration | Result |
+|---|---|---|---|---:|---:|---:|---|
+| Windows test host | win-x64 | Offline | local Vanilla server | 1.8.8 | 47 | 12 s | PASS |
+| Windows test host | win-x64 | Offline | local Vanilla server | 1.12.2 | 340 | 12 s | PASS |
+| Windows test host | win-x64 | Offline | local Vanilla server | 1.19.4 | 762 | 12 s | PASS |
+| Windows test host | win-x64 | Offline | local Vanilla server | 1.20.2 | 764 | 12 s | PASS |
+| Windows test host | win-x64 | Offline | local Vanilla server | 1.20.3 | 765 | 12 s | PASS |
+| Windows test host | win-x64 | Offline | local Vanilla server | 26.2 | 776 | 12 s | PASS |
+| `media-server` | linux-x64 (`x86_64`) | Offline | local Vanilla server | 26.2 | 776 | 65 s | PASS |
+| `arm` | linux-arm64 (`aarch64`) | Offline | local Vanilla server | 26.2 | 776 | 65 s | PASS |
+
+The Windows matrix reached Play, received position/player/health data, and
+cleanly disconnected on every family. Real Resource Pack requests were also
+enabled: 1.8.8 optional hash/status and 26.2 optional UUID/status declines
+remained connected; a required 1.20.3 UUID pack was declined and the controlled
+server disconnected the client as the warning predicted. No asset download was
+attempted.
+
+An actual stored-profile offline reconnect was performed locally and again on
+both Linux hosts. The controlled server was stopped, refused bounded retry
+attempts, restarted, and the same OeXYZ process reached Play again. Offline
+identity was not recreated and Microsoft authentication was never invoked.
+All three deliberate client stops used `/quit` or SIGTERM and returned exit 0.
+
+The exact v1.3.1 `linux-x64` and `linux-arm64` single-file publishes were copied
+to the SSH hosts. `file` reported native x86-64 and AArch64 ELF binaries,
+respectively; transfer SHA-256 matched the local artifacts. Both passed
+`--help`, isolated `list`, `doctor`, status, real Play, Resource Pack decline,
+world-load acknowledgement, more than 60 seconds of runtime, and reconnect.
+
+On `media-server`, an isolated systemd user unit passed `Type=notify`, READY,
+loopback `/health`, `/ready`, `/status`, a 30-second watchdog for 68 seconds
+without restart, and clean stop (`Result=success`, exit 0). The test unit was
+then removed. The installer syntax and rendered-unit regression tests passed
+on Ubuntu. `shellcheck` was not installed on either SSH host. Docker Compose
+configuration passed locally, but the local Docker daemon was not running and
+the SSH user lacked Docker-socket permission; passwordless sudo was unavailable,
+so no real Docker run is claimed for this milestone.
+
+No protected OeXYZ account store existed on either SSH host. Premium login,
+silent refresh, and secure-chat certificate use are therefore recorded as
+BLOCKED (stored account unavailable), not as passed. No interactive login was
+started. Targeted scans of all generated OeXYZ and server `.log` files found no
+Bearer/access/refresh/XSTS/password/control-token/proxy/account-key/device-code
+patterns.
+
+The deterministic suite additionally covers schema classification, bounded
+Resource Pack parsing, all connection deadlines, nonblocking code-of-conduct
+keepalive handling, DNS UDP-source/TCP fallback validation, compression edge
+cases, silent-only reconnect selection, certificate replacement, bounded
+unknown-packet overflow, and transaction-exact updater rollback.
+
 ## Manual release smoke test
 
 Before publishing a tag:

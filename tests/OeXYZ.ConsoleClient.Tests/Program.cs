@@ -241,6 +241,11 @@ Run("validated update replaces GUI and CLI with rollback backup", () =>
     }
 });
 
+Run("update replacement is transaction-scoped and rollback-exact", () =>
+{
+    VerifyTransactionalUpdates();
+});
+
 RunGui("duplicate GUI add and edit operations roll back", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), $"oexyz-gui-duplicates-{Guid.NewGuid():N}");
@@ -474,6 +479,137 @@ static async Task ServeAsync(
     }
 }
 
+static void VerifyTransactionalUpdates()
+{
+    string[] names = ["OeXYZ Console Client.exe", "oexyz.exe"];
+    for (int existingMask = 0; existingMask < 4; existingMask++)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"oexyz-update-existence-{Guid.NewGuid():N}");
+        string stage = Path.Combine(root, "stage");
+        string install = Path.Combine(root, "install");
+        try
+        {
+            Directory.CreateDirectory(stage);
+            Directory.CreateDirectory(install);
+            for (int index = 0; index < names.Length; index++)
+            {
+                File.WriteAllBytes(Path.Combine(stage, names[index]), [(byte)(20 + index)]);
+                if ((existingMask & (1 << index)) != 0)
+                    File.WriteAllBytes(Path.Combine(install, names[index]), [(byte)(10 + index)]);
+            }
+            Directory.CreateDirectory(Path.Combine(install, "update-backup"));
+            File.WriteAllText(Path.Combine(install, "update-backup", "stale.bak"), "stale");
+            File.WriteAllText(Path.Combine(install, names[0] + ".new"), "stale temporary file");
+
+            PreparedUpdate prepared = new(stage, Path.Combine(stage, names[0]), Path.Combine(stage, names[1]));
+            string backup = UpdateInstaller.ApplyWithRollback(prepared, install);
+            True(!string.Equals(Path.GetFileName(backup), "update-backup", StringComparison.Ordinal),
+                "The updater reused a stale backup directory.");
+            for (int index = 0; index < names.Length; index++)
+            {
+                Equal([(byte)(20 + index)], File.ReadAllBytes(Path.Combine(install, names[index])));
+                bool shouldHaveBackup = (existingMask & (1 << index)) != 0;
+                True(File.Exists(Path.Combine(backup, names[index] + ".bak")) == shouldHaveBackup,
+                    "The transaction did not preserve the exact pre-update existence state.");
+            }
+            True(File.Exists(Path.Combine(install, names[0] + ".new")),
+                "An unrelated stale temporary file was interpreted as transaction state.");
+            True(!Directory.EnumerateFiles(install, "*.new-*", SearchOption.TopDirectoryOnly).Any(),
+                "A transaction-scoped temporary file remained after success.");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    VerifyReplacementFailure(names, failName: names[0], failRollback: false);
+    VerifyReplacementFailure(names, failName: names[1], failRollback: false);
+    VerifyReplacementFailure(names, failName: names[1], failRollback: true);
+
+    string reparseRoot = Path.Combine(Path.GetTempPath(), $"oexyz-update-reparse-{Guid.NewGuid():N}");
+    try
+    {
+        string stage = Path.Combine(reparseRoot, "stage");
+        string install = Path.Combine(reparseRoot, "install");
+        Directory.CreateDirectory(stage);
+        Directory.CreateDirectory(install);
+        foreach (string name in names) File.WriteAllBytes(Path.Combine(stage, name), [2]);
+        PreparedUpdate prepared = new(stage, Path.Combine(stage, names[0]), Path.Combine(stage, names[1]));
+        Throws<IOException>(() => UpdateInstaller.ApplyWithRollback(
+            prepared, install, new FaultingUpdateFileSystem("never", false, stage)));
+    }
+    finally
+    {
+        if (Directory.Exists(reparseRoot)) Directory.Delete(reparseRoot, recursive: true);
+    }
+
+    string repeatedRoot = Path.Combine(Path.GetTempPath(), $"oexyz-update-repeated-{Guid.NewGuid():N}");
+    try
+    {
+        string stage = Path.Combine(repeatedRoot, "stage");
+        string install = Path.Combine(repeatedRoot, "install");
+        Directory.CreateDirectory(stage);
+        Directory.CreateDirectory(install);
+        foreach (string name in names)
+        {
+            File.WriteAllBytes(Path.Combine(stage, name), [2]);
+            File.WriteAllBytes(Path.Combine(install, name), [1]);
+        }
+        PreparedUpdate prepared = new(stage, Path.Combine(stage, names[0]), Path.Combine(stage, names[1]));
+        string firstBackup = UpdateInstaller.ApplyWithRollback(prepared, install);
+        foreach (string name in names) File.WriteAllBytes(Path.Combine(stage, name), [3]);
+        string secondBackup = UpdateInstaller.ApplyWithRollback(prepared, install);
+        True(!string.Equals(firstBackup, secondBackup, StringComparison.OrdinalIgnoreCase),
+            "Repeated updates reused a transaction backup directory.");
+        foreach (string name in names)
+        {
+            Equal([1], File.ReadAllBytes(Path.Combine(firstBackup, name + ".bak")));
+            Equal([2], File.ReadAllBytes(Path.Combine(secondBackup, name + ".bak")));
+            Equal([3], File.ReadAllBytes(Path.Combine(install, name)));
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(repeatedRoot)) Directory.Delete(repeatedRoot, recursive: true);
+    }
+}
+
+static void VerifyReplacementFailure(string[] names, string failName, bool failRollback)
+{
+    string root = Path.Combine(Path.GetTempPath(), $"oexyz-update-failure-{Guid.NewGuid():N}");
+    string stage = Path.Combine(root, "stage");
+    string install = Path.Combine(root, "install");
+    try
+    {
+        Directory.CreateDirectory(stage);
+        Directory.CreateDirectory(install);
+        foreach (string name in names)
+        {
+            File.WriteAllBytes(Path.Combine(stage, name), [2]);
+            File.WriteAllBytes(Path.Combine(install, name), [1]);
+        }
+        PreparedUpdate prepared = new(stage, Path.Combine(stage, names[0]), Path.Combine(stage, names[1]));
+        FaultingUpdateFileSystem fileSystem = new(failName, failRollback);
+        if (failRollback)
+        {
+            Throws<AggregateException>(() => UpdateInstaller.ApplyWithRollback(prepared, install, fileSystem));
+        }
+        else
+        {
+            Throws<IOException>(() => UpdateInstaller.ApplyWithRollback(prepared, install, fileSystem));
+            foreach (string name in names)
+                Equal([1], File.ReadAllBytes(Path.Combine(install, name)));
+            True(!Directory.EnumerateFiles(install, "*.new-*", SearchOption.TopDirectoryOnly).Any(),
+                "A temporary update file remained after rollback.");
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+}
+
 static void Equal(byte[] expected, byte[] actual)
 {
     if (!expected.AsSpan().SequenceEqual(actual))
@@ -537,4 +673,36 @@ static string FindRepositoryFile(string relativePath)
     }
     throw new FileNotFoundException(
         $"Could not locate repository file '{relativePath}' from the test output directory.");
+}
+
+sealed class FaultingUpdateFileSystem(
+    string failReplacementName,
+    bool failRollback,
+    string? reparsePath = null)
+    : UpdateInstaller.IUpdateFileSystem
+{
+    public bool FileExists(string path) => File.Exists(path);
+    public bool DirectoryExists(string path) => Directory.Exists(path);
+    public FileAttributes GetAttributes(string path) =>
+        File.GetAttributes(path) |
+        (reparsePath is not null && string.Equals(
+            Path.GetFullPath(path), Path.GetFullPath(reparsePath), StringComparison.OrdinalIgnoreCase)
+            ? FileAttributes.ReparsePoint
+            : 0);
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+    public void CopyFile(string source, string destination, bool overwrite) =>
+        File.Copy(source, destination, overwrite);
+
+    public void MoveFile(string source, string destination, bool overwrite)
+    {
+        if (source.Contains(".new-", StringComparison.Ordinal) &&
+            string.Equals(Path.GetFileName(destination), failReplacementName, StringComparison.Ordinal))
+            throw new IOException("Injected replacement failure.");
+        if (failRollback && source.Contains(".rollback-", StringComparison.Ordinal))
+            throw new IOException("Injected rollback failure.");
+        File.Move(source, destination, overwrite);
+    }
+
+    public void DeleteFile(string path) => File.Delete(path);
+    public void DeleteDirectory(string path, bool recursive) => Directory.Delete(path, recursive);
 }

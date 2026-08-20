@@ -14,7 +14,6 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.3.0</Version>
     <Authors>OeXYZ contributors</Authors>
     <Product>OeXYZ Console Client</Product>
     <Description>Native headless Minecraft Java console client for chat and AFK sessions.</Description>

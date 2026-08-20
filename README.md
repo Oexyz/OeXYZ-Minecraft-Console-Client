@@ -22,7 +22,7 @@ It implements the Minecraft protocol directly, uses **no renderer**, supports
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-1389FD?logo=windows">
   <img alt="Minecraft Java 1.8 through 26.2" src="https://img.shields.io/badge/Minecraft%20Java-1.8%E2%80%9326.2-35c46a">
   <img alt="Protocols 47 through 776" src="https://img.shields.io/badge/protocols-47%E2%80%93776-8b5cf6">
-  <img alt="89 .NET checks plus one shell installer test" src="https://img.shields.io/badge/tests-89%20.NET%20%2B%201%20shell-35c46a">
+  <img alt="Deterministic tests run in CI" src="https://img.shields.io/badge/tests-deterministic%20CI-35c46a">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
 </p>
 
@@ -42,8 +42,8 @@ Download the archive matching your Windows computer from the
 
 | System | Release asset |
 |---|---|
-| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.3.0-win-x64.zip` |
-| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.3.0-win-arm64.zip` |
+| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.3.1-win-x64.zip` |
+| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.3.1-win-arm64.zip` |
 
 ### Linux installer
 

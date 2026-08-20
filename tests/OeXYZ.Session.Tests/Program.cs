@@ -1,5 +1,7 @@
 using System.IO.Compression;
 using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 using OeXYZ.Session;
@@ -389,6 +391,66 @@ finally
     if (Directory.Exists(doctorRoot)) Directory.Delete(doctorRoot, recursive: true);
 }
 
+string refreshRoot = Path.Combine(Path.GetTempPath(), "oexyz-reconnect-auth-tests", Guid.NewGuid().ToString("N"));
+try
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    using CancellationTokenSource testTimeout = new(TimeSpan.FromSeconds(10));
+    Task serverTask = Task.Run(async () =>
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            using (TcpClient statusPeer = await listener.AcceptTcpClientAsync(testTimeout.Token))
+            {
+            }
+            using TcpClient loginPeer = await listener.AcceptTcpClientAsync(testTimeout.Token);
+            NetworkStream stream = loginPeer.GetStream();
+            await stream.WriteAsync(new byte[] { 1, 2, 1, 1 }, testTimeout.Token);
+            await stream.FlushAsync(testTimeout.Token);
+            await Task.Delay(100, testTimeout.Token);
+        }
+    }, testTimeout.Token);
+
+    AccountProfile account = new()
+    {
+        DisplayName = "Microsoft refresh test",
+        Kind = AccountKind.Microsoft,
+        LoginHint = "refresh@example.invalid"
+    };
+    ServerProfile server = new()
+    {
+        DisplayName = "Reconnect authentication",
+        Address = "127.0.0.1",
+        CustomPort = port,
+        Version = "1.8.8",
+        AntiAfk = false,
+        AutoReconnect = true,
+        ReconnectInitialDelaySeconds = 1,
+        ReconnectMaximumDelaySeconds = 1,
+        ReconnectMaximumAttempts = 2
+    };
+    RecordingIdentityProvider identityProvider = new();
+    await using ConsoleSession session = new(account, server, identityProvider, () => { }, refreshRoot);
+    session.Start();
+    await WaitUntilAsync(() => identityProvider.Modes.Count >= 2, TimeSpan.FromSeconds(7));
+    True(identityProvider.Modes[0] == AuthenticationInteractionMode.InteractiveAllowed,
+        "The initial user-started connection did not allow interaction.");
+    True(identityProvider.Modes[1] == AuthenticationInteractionMode.SilentOnly,
+        "Automatic reconnect did not require silent-only authentication.");
+    True(identityProvider.FirstCertificateKeyWasDisposed,
+        "The old secure-chat certificate was not disposed after successful replacement.");
+    await serverTask.WaitAsync(TimeSpan.FromSeconds(3));
+    session.Stop();
+    await session.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+    Console.WriteLine("PASS: reconnect silently refreshes Microsoft identity and replaces certificates");
+}
+finally
+{
+    if (Directory.Exists(refreshRoot)) Directory.Delete(refreshRoot, recursive: true);
+}
+
 static SessionSnapshot Snapshot(bool connected) => new(
     connected ? "CONNECTED" : "CONNECTING",
     connected ? SessionLineKind.Success : SessionLineKind.Information,
@@ -420,11 +482,69 @@ static void True(bool value, string message)
 static bool ContainsUnsafeControl(string value) => value.Any(character =>
     char.IsControl(character) || character is '\u2028' or '\u2029');
 
+static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+{
+    DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+    while (!condition())
+    {
+        if (DateTimeOffset.UtcNow >= deadline) throw new TimeoutException("The test condition was not reached.");
+        await Task.Delay(20);
+    }
+}
+
 sealed class OfflineIdentityProvider : IIdentityProvider
 {
     public Task<MinecraftIdentity> GetIdentityAsync(
         AccountProfile profile,
         Action<string> status,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        AuthenticationInteractionMode interactionMode = AuthenticationInteractionMode.InteractiveAllowed) =>
         Task.FromResult(MinecraftIdentity.Offline(profile.LoginHint));
+}
+
+sealed class RecordingIdentityProvider : IIdentityProvider
+{
+    private readonly object sync = new();
+    private readonly List<AuthenticationInteractionMode> modes = [];
+    private readonly RSA firstKey = RSA.Create(1024);
+    private int calls;
+
+    public IReadOnlyList<AuthenticationInteractionMode> Modes
+    {
+        get { lock (sync) return modes.ToArray(); }
+    }
+
+    public bool FirstCertificateKeyWasDisposed
+    {
+        get
+        {
+            try
+            {
+                _ = firstKey.SignData([1, 2, 3], HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                return false;
+            }
+            catch (ObjectDisposedException)
+            {
+                return true;
+            }
+        }
+    }
+
+    public Task<MinecraftIdentity> GetIdentityAsync(
+        AccountProfile profile,
+        Action<string> status,
+        CancellationToken cancellationToken,
+        AuthenticationInteractionMode interactionMode = AuthenticationInteractionMode.InteractiveAllowed)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        int call = Interlocked.Increment(ref calls);
+        lock (sync) modes.Add(interactionMode);
+        RSA key = call == 1 ? firstKey : RSA.Create(1024);
+        PlayerCertificate certificate = new(
+            key, [1], [2], [3], DateTimeOffset.UtcNow.AddHours(1));
+        profile.AccountIdentifier = "protected-account-reference";
+        return Task.FromResult(new MinecraftIdentity(
+            "RefreshTest", Guid.Parse("00112233-4455-6677-8899-aabbccddeeff"),
+            "not-a-real-token", certificate));
+    }
 }

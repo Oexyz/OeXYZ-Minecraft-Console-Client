@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Runtime.ExceptionServices;
 
 namespace OeXYZ.Updater;
 
@@ -14,10 +15,14 @@ public static class UpdateInstaller
         ArgumentException.ThrowIfNullOrWhiteSpace(stagingDirectory);
         string root = Path.GetFullPath(stagingDirectory);
         Directory.CreateDirectory(root);
+        EnsureNoReparsePoint(root);
         using ZipArchive archive = ZipFile.OpenRead(archivePath);
         long total = 0;
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
+            int unixFileType = (entry.ExternalAttributes >> 16) & 0xF000;
+            if (unixFileType == 0xA000)
+                throw new InvalidDataException("The update contains a symbolic-link entry.");
             if (entry.Length < 0 || entry.Length > MaximumExtractedBytes ||
                 total > MaximumExtractedBytes - entry.Length)
                 throw new InvalidDataException("The update exceeds the extraction safety limit.");
@@ -39,6 +44,7 @@ public static class UpdateInstaller
     public static PreparedUpdate ValidateStage(string stagingDirectory)
     {
         string root = Path.GetFullPath(stagingDirectory);
+        EnsureNoReparsePoint(root);
         string gui = Path.Combine(root, "OeXYZ Console Client.exe");
         string cli = Path.Combine(root, "oexyz.exe");
         if (!File.Exists(gui) || new FileInfo(gui).Length < 1024 * 1024)
@@ -49,13 +55,26 @@ public static class UpdateInstaller
     }
 
     public static string ApplyWithRollback(PreparedUpdate update, string installationDirectory)
+        => ApplyWithRollback(update, installationDirectory, PhysicalUpdateFileSystem.Instance);
+
+    internal static string ApplyWithRollback(
+        PreparedUpdate update,
+        string installationDirectory,
+        IUpdateFileSystem fileSystem)
     {
+        ArgumentNullException.ThrowIfNull(update);
+        ArgumentNullException.ThrowIfNull(fileSystem);
         string install = Path.GetFullPath(installationDirectory);
-        Directory.CreateDirectory(install);
-        string backup = Path.Combine(install, "update-backup");
-        Directory.CreateDirectory(backup);
+        fileSystem.CreateDirectory(install);
+        EnsureNoReparsePoint(install, fileSystem);
+        EnsureNoReparsePoint(update.StagingDirectory, fileSystem);
+        string transactionId = Guid.NewGuid().ToString("N");
+        string backup = Path.Combine(install, "update-backup-" + transactionId);
+        fileSystem.CreateDirectory(backup);
         string[] names = ["OeXYZ Console Client.exe", "oexyz.exe"];
-        List<(string Destination, string Backup)> replaced = [];
+        List<Replacement> replacements = [];
+        Exception? originalFailure = null;
+        List<Exception> rollbackFailures = [];
         try
         {
             foreach (string name in names)
@@ -63,19 +82,142 @@ public static class UpdateInstaller
                 string source = Path.Combine(update.StagingDirectory, name);
                 string destination = Path.Combine(install, name);
                 string backupPath = Path.Combine(backup, name + ".bak");
-                if (File.Exists(destination)) File.Copy(destination, backupPath, overwrite: true);
-                string temporary = destination + ".new";
-                File.Copy(source, temporary, overwrite: true);
-                File.Move(temporary, destination, overwrite: true);
-                replaced.Add((destination, backupPath));
+                string temporary = destination + ".new-" + transactionId;
+                if (!fileSystem.FileExists(source)) throw new FileNotFoundException("A staged update file is missing.", source);
+                EnsureNoReparsePoint(source, fileSystem);
+                if (fileSystem.FileExists(destination)) EnsureNoReparsePoint(destination, fileSystem);
+                bool existed = fileSystem.FileExists(destination);
+                Replacement replacement = new(destination, backupPath, temporary, existed);
+                replacements.Add(replacement);
+                if (existed) fileSystem.CopyFile(destination, backupPath, overwrite: false);
+                fileSystem.CopyFile(source, temporary, overwrite: false);
+                fileSystem.MoveFile(temporary, destination, overwrite: true);
+                replacement.Applied = true;
             }
             return backup;
         }
-        catch
+        catch (Exception exception)
         {
-            foreach ((string destination, string backupPath) in replaced.AsEnumerable().Reverse())
-                if (File.Exists(backupPath)) File.Copy(backupPath, destination, overwrite: true);
-            throw;
+            originalFailure = exception;
+            foreach (Replacement replacement in replacements.AsEnumerable().Reverse())
+            {
+                if (!replacement.Applied) continue;
+                try
+                {
+                    if (replacement.ExistedBefore)
+                    {
+                        string restore = replacement.Destination + ".rollback-" + transactionId;
+                        fileSystem.CopyFile(replacement.Backup, restore, overwrite: false);
+                        try { fileSystem.MoveFile(restore, replacement.Destination, overwrite: true); }
+                        finally { TryDeleteFile(restore, rollbackFailures, fileSystem); }
+                    }
+                    else if (fileSystem.FileExists(replacement.Destination))
+                    {
+                        fileSystem.DeleteFile(replacement.Destination);
+                    }
+                }
+                catch (Exception rollbackException)
+                {
+                    rollbackFailures.Add(new IOException(
+                        $"Rollback failed for '{Path.GetFileName(replacement.Destination)}'.",
+                        rollbackException));
+                }
+            }
         }
+        finally
+        {
+            foreach (Replacement replacement in replacements)
+                TryDeleteFile(replacement.Temporary, rollbackFailures, fileSystem);
+        }
+
+        if (originalFailure is null) throw new InvalidOperationException("The update transaction ended unexpectedly.");
+        if (rollbackFailures.Count == 0)
+        {
+            try { fileSystem.DeleteDirectory(backup, recursive: true); }
+            catch (Exception cleanupException)
+            {
+                rollbackFailures.Add(new IOException("The failed update backup could not be cleaned up.", cleanupException));
+            }
+        }
+        if (rollbackFailures.Count > 0)
+        {
+            List<Exception> failures = [originalFailure, .. rollbackFailures];
+            throw new AggregateException("The update failed and rollback or cleanup was incomplete.", failures);
+        }
+        ExceptionDispatchInfo.Capture(originalFailure).Throw();
+        throw new InvalidOperationException("Unreachable update rollback path.");
+    }
+
+    private static void TryDeleteFile(
+        string path,
+        List<Exception> failures,
+        IUpdateFileSystem fileSystem)
+    {
+        try
+        {
+            if (fileSystem.FileExists(path)) fileSystem.DeleteFile(path);
+        }
+        catch (Exception exception)
+        {
+            failures.Add(new IOException($"Temporary update file '{Path.GetFileName(path)}' could not be removed.",
+                exception));
+        }
+    }
+
+    private static void EnsureNoReparsePoint(string path) =>
+        EnsureNoReparsePoint(path, PhysicalUpdateFileSystem.Instance);
+
+    private static void EnsureNoReparsePoint(string path, IUpdateFileSystem fileSystem)
+    {
+        string? current = Path.GetFullPath(path);
+        while (!string.IsNullOrEmpty(current))
+        {
+            if ((fileSystem.FileExists(current) || fileSystem.DirectoryExists(current)) &&
+                (fileSystem.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Update paths may not contain symbolic links or reparse points.");
+            string? parent = Path.GetDirectoryName(current);
+            if (string.Equals(parent, current, StringComparison.OrdinalIgnoreCase)) break;
+            current = parent;
+        }
+    }
+
+    internal interface IUpdateFileSystem
+    {
+        bool FileExists(string path);
+        bool DirectoryExists(string path);
+        FileAttributes GetAttributes(string path);
+        void CreateDirectory(string path);
+        void CopyFile(string source, string destination, bool overwrite);
+        void MoveFile(string source, string destination, bool overwrite);
+        void DeleteFile(string path);
+        void DeleteDirectory(string path, bool recursive);
+    }
+
+    private sealed class PhysicalUpdateFileSystem : IUpdateFileSystem
+    {
+        public static PhysicalUpdateFileSystem Instance { get; } = new();
+        public bool FileExists(string path) => File.Exists(path);
+        public bool DirectoryExists(string path) => Directory.Exists(path);
+        public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
+        public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+        public void CopyFile(string source, string destination, bool overwrite) =>
+            File.Copy(source, destination, overwrite);
+        public void MoveFile(string source, string destination, bool overwrite) =>
+            File.Move(source, destination, overwrite);
+        public void DeleteFile(string path) => File.Delete(path);
+        public void DeleteDirectory(string path, bool recursive) => Directory.Delete(path, recursive);
+    }
+
+    private sealed class Replacement(
+        string destination,
+        string backup,
+        string temporary,
+        bool existedBefore)
+    {
+        public string Destination { get; } = destination;
+        public string Backup { get; } = backup;
+        public string Temporary { get; } = temporary;
+        public bool ExistedBefore { get; } = existedBefore;
+        public bool Applied { get; set; }
     }
 }

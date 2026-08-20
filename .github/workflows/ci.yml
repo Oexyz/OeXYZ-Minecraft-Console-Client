@@ -72,6 +72,21 @@ jobs:
             [pscustomobject]@{ Minecraft=$version.minecraftVersion; Protocol=$version.protocolVersion; Missing=($missing -join ', ') }
           }
           $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath protocol-compatibility.txt
+          $knownRequests = @('UrlHash','UrlHashForcedPrompt','UuidUrlHashForcedPrompt')
+          $knownResponses = @('HashAndStatus','StatusOnly','UuidAndStatus')
+          foreach ($version in $catalog.versions) {
+            if ($version.resourcePackRequestLayout -notin $knownRequests) {
+              throw "Unknown resource-pack request layout for $($version.minecraftVersion): $($version.resourcePackRequestLayout)"
+            }
+            if ($version.resourcePackResponseLayout -notin $knownResponses) {
+              throw "Unknown resource-pack response layout for $($version.minecraftVersion): $($version.resourcePackResponseLayout)"
+            }
+            $serverbound = @($version.packetIds.playServerbound.PSObject.Properties.Name) +
+              @($version.packetIds.configurationServerbound.PSObject.Properties.Name)
+            if ('resource_pack_receive' -notin $serverbound) {
+              throw "Resource-pack response mapping missing for $($version.minecraftVersion)."
+            }
+          }
           if ($rows[-1].Missing) { throw "Newest protocol lacks critical mappings: $($rows[-1].Missing)" }
           $newest = $catalog.versions[-1].packetIds
           if ('ping' -notin @($newest.playClientbound.PSObject.Properties.Name) -or
@@ -197,7 +212,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=/tmp/oexyz-multiarch.oci \
-            --build-arg VERSION=1.3.0-dev \
+            --build-arg VERSION=1.3.1-dev \
             --build-arg SOURCE_COMMIT="${{ github.sha }}" .
 
       - name: Upload Linux CI publish

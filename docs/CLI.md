@@ -152,6 +152,13 @@ the current executable directory to the current user's `PATH`. The inverse
 | 64 | Invalid command line or bounded local input rejected |
 | 70 | Unexpected internal error |
 
+Connection errors identify whether TCP connect, login, Configuration, or the
+code-of-conduct decision exceeded its deadline. These remain distinct from
+Ctrl+C, `/quit`, and other deliberate shutdowns. If a Microsoft reconnect can
+no longer refresh silently, automatic retries stop and the CLI asks the user to
+run an explicit login again; reconnect never starts a browser or device-code
+flow on its own.
+
 See [Linux, Docker, systemd, and Raspberry Pi](DEPLOYMENT.md) for unattended
 operation. v1.3 provides a terminal dashboard, not a Linux desktop GUI; the
 clickable WinForms frontend remains Windows-only.
