@@ -83,6 +83,19 @@ The conduct prompt runs outside the receive loop, so Configuration keepalives
 and pings continue while the UI decides. A pending finish-Configuration packet
 is represented by one bounded flag rather than buffered packets.
 
+All connection writes pass through one bounded `OutboundPacketDispatcher`.
+Critical protocol controls and normal user traffic have separate 128-entry
+queues; one writer builds payloads and writes them in wire order, with an
+eight-packet critical burst limit to prevent starvation. Thus secure-chat
+indexes are assigned at serialization time rather than by competing callers.
+
+Protocol callbacks use a bounded event dispatcher. Subscriber invocation is
+isolated per delegate and never runs on the receive/write path. Normal floods
+are dropped with counters while critical state has a reserved queue. Metrics
+are coalesced to one update every 200 ms, with immediate state/final snapshots.
+Drop and subscriber-failure counters flow through session/runtime snapshots,
+the health status, support package, CLI dashboard, and GUI inspector.
+
 Both frontends apply age retention at startup and once per minute, followed by
 a hard 300 MB aggregate cap. Active session logs rotate at 16 MiB and CLI log
 files at 32 MiB. Selection is deterministic by last-write time; the oldest
@@ -132,6 +145,12 @@ session bookmarks are dropped. Saving is temporary-file then replace, with a
 depth 64. `--config` and `OEXYZ_CONFIG` override only the non-secret profile
 path. Linux defaults follow XDG config/state roots; Docker maps separate
 config, state, and key volumes.
+
+Profile loading validates the primary and `.bak` independently. A corrupt or
+missing primary with a valid backup produces a typed recovery state; it is never
+restored silently. GUI confirmation or `oexyz profiles-recover` preserves the
+original as a unique `.corrupt-*` file and atomically restores the validated
+backup while holding the same interprocess lock.
 
 ## Service and container boundary
 

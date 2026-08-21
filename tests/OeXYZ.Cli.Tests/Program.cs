@@ -235,6 +235,7 @@ await RunAsync("doctor, healthcheck and account-key generation bypass malformed 
     Directory.CreateDirectory(root);
     string profiles = Path.Combine(root, "profiles.json");
     string validProfiles = Path.Combine(root, "valid-profiles.json");
+    string recoveryProfiles = Path.Combine(root, "recovery-profiles.json");
     string key = Path.Combine(root, "account.key");
     await File.WriteAllTextAsync(profiles, "{ malformed profile JSON");
     try
@@ -257,6 +258,22 @@ await RunAsync("doctor, healthcheck and account-key generation bypass malformed 
         OeXYZExitCode invalidPort = await CliApplication.RunAsync(
             ["server-add", "BadPort", "--address", "example.org:0", "--config", validProfiles]);
         Equal(OeXYZExitCode.InvalidArguments, invalidPort);
+
+        ProfileRepository recoveryRepository = new(recoveryProfiles);
+        recoveryRepository.Save(new ProfileDocument());
+        ProfileDocument recoveryDocument = recoveryRepository.Load();
+        recoveryDocument.Accounts.Add(new AccountProfile
+        {
+            DisplayName = "Recoverable",
+            Kind = AccountKind.Offline,
+            LoginHint = "Recoverable"
+        });
+        recoveryRepository.Save(recoveryDocument);
+        await File.WriteAllTextAsync(recoveryProfiles, "{ corrupt");
+        OeXYZExitCode recovered = await CliApplication.RunAsync(
+            ["profiles-recover", "--config", recoveryProfiles, "--json"]);
+        Equal(OeXYZExitCode.Success, recovered);
+        Equal(0, new ProfileRepository(recoveryProfiles).Load().Accounts.Count);
     }
     finally
     {

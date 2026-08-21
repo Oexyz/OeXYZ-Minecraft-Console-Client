@@ -22,7 +22,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private readonly MinecraftIdentity identity;
     private readonly MinecraftServicesClient servicesClient;
     private readonly ConnectionDeadlinePolicy deadlines;
+    private readonly ProtocolEventDispatcher eventDispatcher;
     private readonly CancellationTokenSource lifetime = new();
+    private readonly CancellationTokenSource metricsLifetime = new();
     private readonly TaskCompletionSource playReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource codeOfConductStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -34,6 +36,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private TcpClient? tcpClient;
     private MinecraftPacketStream? packets;
     private Task? receiveTask;
+    private readonly Task metricsPublisherTask;
     private int stopping;
     private ConnectionState state;
     private PlayerPosition position = new(0, 0, 0, 0, 0);
@@ -50,6 +53,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private int pingMilliseconds = -1;
     private Exception? terminalException;
     private long unknownPacketOverflow;
+    private long subscriberFailures;
+    private int metricsDirty;
     private Task? codeOfConductTask;
     private bool finishConfigurationPending;
 
@@ -122,6 +127,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         this.servicesClient = servicesClient ?? new MinecraftServicesClient();
         this.deadlines = deadlines ?? throw new ArgumentNullException(nameof(deadlines));
         deadlines.Validate();
+        eventDispatcher = new ProtocolEventDispatcher(_ => Interlocked.Increment(ref subscriberFailures));
+        metricsPublisherTask = RunMetricsPublisherAsync();
         if (initialPingMilliseconds is < 0)
             throw new ArgumentOutOfRangeException(nameof(initialPingMilliseconds));
         pingMilliseconds = initialPingMilliseconds ?? -1;
@@ -157,7 +164,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         Interlocked.Read(ref bytesSent),
         Interlocked.Read(ref packetsReceived),
         Interlocked.Read(ref packetsSent),
-        Volatile.Read(ref pingMilliseconds) < 0 ? null : Volatile.Read(ref pingMilliseconds));
+        Volatile.Read(ref pingMilliseconds) < 0 ? null : Volatile.Read(ref pingMilliseconds),
+        eventDispatcher.Dropped,
+        Interlocked.Read(ref subscriberFailures),
+        0);
 
     public IReadOnlyList<PlayerListEntry> Players
     {
@@ -225,7 +235,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
         packets = new MinecraftPacketStream(client.GetStream());
         packets.PacketWritten += OnPacketWritten;
-        Log?.Invoke($"TCP connection established to {host}:{port}.");
+        Raise(Log, $"TCP connection established to {host}:{port}.");
 
         await packets.WriteAsync(0, writer =>
         {
@@ -327,22 +337,25 @@ public sealed class MinecraftConnection : IAsyncDisposable
         Dictionary<string, int> ids = protocol.PacketIds.PlayServerbound;
         if (message.StartsWith("/", StringComparison.Ordinal) && ids.TryGetValue("chat_command", out int commandPacket))
         {
-            await packets.WriteAsync(commandPacket, writer => WriteCommand(writer, message[1..]), cancellationToken).ConfigureAwait(false);
+            await packets.WriteAsync(commandPacket, writer => WriteCommand(writer, message[1..]), cancellationToken,
+                OutboundPacketPriority.Normal).ConfigureAwait(false);
         }
         else if (ids.TryGetValue("chat_message", out int signedChatPacket))
         {
-            await packets.WriteAsync(signedChatPacket, writer => WriteChatMessage(writer, message), cancellationToken).ConfigureAwait(false);
+            await packets.WriteAsync(signedChatPacket, writer => WriteChatMessage(writer, message), cancellationToken,
+                OutboundPacketPriority.Normal).ConfigureAwait(false);
         }
         else if (ids.TryGetValue("chat", out int legacyChatPacket))
         {
-            await packets.WriteAsync(legacyChatPacket, writer => writer.WriteString(message, 256), cancellationToken).ConfigureAwait(false);
+            await packets.WriteAsync(legacyChatPacket, writer => writer.WriteString(message, 256), cancellationToken,
+                OutboundPacketPriority.Normal).ConfigureAwait(false);
         }
         else
         {
             throw new NotSupportedException("Outgoing chat is not mapped for this protocol version.");
         }
 
-        Log?.Invoke(FormatOutgoingChatLog(message));
+        Raise(Log, FormatOutgoingChatLog(message));
     }
 
     internal static string FormatOutgoingChatLog(string message)
@@ -356,8 +369,9 @@ public sealed class MinecraftConnection : IAsyncDisposable
     {
         MinecraftPacketStream stream = packets ?? throw new InvalidOperationException("The client is not connected.");
         int packetId = Require(protocol.PacketIds.PlayServerbound, "client_command");
-        await stream.WriteAsync(packetId, writer => writer.WriteVarInt(0), cancellationToken).ConfigureAwait(false);
-        Log?.Invoke("Respawn request sent.");
+        await stream.WriteAsync(packetId, writer => writer.WriteVarInt(0), cancellationToken,
+            OutboundPacketPriority.Normal).ConfigureAwait(false);
+        Raise(Log, "Respawn request sent.");
     }
 
     public async Task SendPositionAsync(CancellationToken cancellationToken = default)
@@ -373,7 +387,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             writer.WriteFloat(current.Yaw);
             writer.WriteFloat(current.Pitch);
             writer.WriteByte(1);
-        }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken, OutboundPacketPriority.Normal).ConfigureAwait(false);
     }
 
     public Task PerformAfkActionAsync(float yawDegrees = 7.5F, CancellationToken cancellationToken = default)
@@ -435,8 +449,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 Interlocked.Increment(ref packetsReceived);
                 Interlocked.Exchange(ref lastReceivedUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
                 TracePacket(PacketDirection.Clientbound, state, packet.Id, packet.Payload.Length, packet.WireLength);
-                PacketObserved?.Invoke(state, packet.Id, packet.Payload.Length);
-                MetricsChanged?.Invoke(Metrics);
+                Raise(PacketObserved, state, packet.Id, packet.Payload.Length);
+                RequestMetricsUpdate();
                 switch (state)
                 {
                     case ConnectionState.Login:
@@ -464,8 +478,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
             Interlocked.CompareExchange(ref terminalException, exception, null);
             loginComplete.TrySetException(exception);
             playReady.TrySetException(exception);
-            ConnectionFaulted?.Invoke(exception);
-            Log?.Invoke($"Connection ended: {exception.Message}");
+            Raise(ConnectionFaulted, exception, isCritical: true);
+            Raise(Log, $"Connection ended: {exception.Message}", isCritical: true);
         }
         finally
         {
@@ -484,7 +498,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             PacketReader reader = new(packet.Payload);
             int threshold = reader.ReadVarInt();
             packets!.EnableCompression(threshold);
-            Log?.Invoke($"Packet compression enabled at {threshold} bytes.");
+            Raise(Log, $"Packet compression enabled at {threshold} bytes.");
             return;
         }
 
@@ -521,7 +535,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
 
         if (!Is(inbound, "success", packet.Id)) return;
-        Log?.Invoke("Login accepted by server.");
+        Raise(Log, "Login accepted by server.");
         if (protocol.HasConfiguration)
         {
             int acknowledgement = Require(protocol.PacketIds.LoginServerbound, "login_acknowledged");
@@ -586,7 +600,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             string contents = TerminalTextSanitizer.Sanitize(reader.ReadString(16_384));
             if (contents.Length > 16_384 || reader.Remaining != 0)
                 throw new InvalidDataException("The server code of conduct is outside safety limits.");
-            Log?.Invoke("The server requires accepting its code of conduct.");
+            Raise(Log, "The server requires accepting its code of conduct.", isCritical: true);
             BeginCodeOfConductDecision(contents, cancellationToken);
             return;
         }
@@ -690,13 +704,14 @@ public sealed class MinecraftConnection : IAsyncDisposable
             PacketReader reader = new(packet.Payload);
             float health = reader.ReadFloat();
             int food = reader.ReadVarInt();
-            HealthChanged?.Invoke(health, food);
+            Raise(HealthChanged, health, food, isCritical: true);
             return;
         }
 
         if (Is(inbound, "player_info", packet.Id) || Is(inbound, "player_info_update", packet.Id))
         {
-            TryHandlePlayerInfo(packet.Payload, protocol.ProtocolVersion >= 761 || Is(inbound, "player_info_update", packet.Id));
+            TryHandlePlayerInfo(packet.Payload,
+                protocol.Capabilities.PlayerInfoLayout == PlayerInfoPacketLayout.ModernBitSet);
             return;
         }
 
@@ -708,8 +723,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
 
         if (Is(inbound, "death_combat_event", packet.Id))
         {
-            Died?.Invoke();
-            Log?.Invoke("The player died; a respawn request can now be sent.");
+            Raise(Died, isCritical: true);
+            Raise(Log, "The player died; a respawn request can now be sent.", isCritical: true);
             return;
         }
 
@@ -726,7 +741,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
             }
             bool actionBar = reader.Remaining > 0 && reader.ReadBoolean();
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, actionBar, formatting));
+            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, actionBar, formatting));
             return;
         }
 
@@ -737,7 +752,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 lock (playersLock) return players.TryGetValue(uuid, out PlayerListEntry? player) ? player.Name : null;
             });
             FormattedChatText formatting = ChatTextCodec.ParseLegacy(decoded.Text);
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
+            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             return;
         }
 
@@ -753,7 +768,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             {
                 formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
             }
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
+            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             return;
         }
 
@@ -762,11 +777,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
             PacketReader reader = new(packet.Payload);
             string json = reader.ReadString(262144);
             FormattedChatText formatting = ChatTextCodec.ParseJson(json);
-            ChatReceived?.Invoke(new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
+            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
             if (ChatTextCodec.TranslationKeyFromJson(json)?.StartsWith("death.", StringComparison.Ordinal) == true)
             {
-                Died?.Invoke();
-                Log?.Invoke("The player died; a respawn request can now be sent.");
+                Raise(Died, isCritical: true);
+                Raise(Log, "The player died; a respawn request can now be sent.", isCritical: true);
             }
             return;
         }
@@ -789,29 +804,41 @@ public sealed class MinecraftConnection : IAsyncDisposable
         float pitch;
         int flags;
 
-        if (protocol.ProtocolVersion >= 768)
+        switch (protocol.Capabilities.PositionLayout)
         {
-            teleportId = reader.ReadVarInt();
-            x = reader.ReadDouble();
-            y = reader.ReadDouble();
-            z = reader.ReadDouble();
-            _ = reader.ReadDouble();
-            _ = reader.ReadDouble();
-            _ = reader.ReadDouble();
-            yaw = reader.ReadFloat();
-            pitch = reader.ReadFloat();
-            flags = reader.ReadInt();
+            case PositionPacketLayout.RelativeVelocity:
+                teleportId = reader.ReadVarInt();
+                x = reader.ReadDouble();
+                y = reader.ReadDouble();
+                z = reader.ReadDouble();
+                _ = reader.ReadDouble();
+                _ = reader.ReadDouble();
+                _ = reader.ReadDouble();
+                yaw = reader.ReadFloat();
+                pitch = reader.ReadFloat();
+                flags = reader.ReadInt();
+                break;
+            case PositionPacketLayout.TeleportIdWithDismount:
+            case PositionPacketLayout.TeleportId:
+            case PositionPacketLayout.LegacyCoordinates:
+                x = reader.ReadDouble();
+                y = reader.ReadDouble();
+                z = reader.ReadDouble();
+                yaw = reader.ReadFloat();
+                pitch = reader.ReadFloat();
+                flags = reader.ReadByte();
+                if (protocol.Capabilities.PositionLayout is PositionPacketLayout.TeleportId or
+                    PositionPacketLayout.TeleportIdWithDismount)
+                    teleportId = reader.ReadVarInt();
+                if (protocol.Capabilities.PositionLayout == PositionPacketLayout.TeleportIdWithDismount)
+                    _ = reader.ReadBoolean();
+                break;
+            case PositionPacketLayout.None:
+            default:
+                throw new NotSupportedException("The position packet layout is not supported.");
         }
-        else
-        {
-            x = reader.ReadDouble();
-            y = reader.ReadDouble();
-            z = reader.ReadDouble();
-            yaw = reader.ReadFloat();
-            pitch = reader.ReadFloat();
-            flags = reader.ReadByte();
-            if (protocol.ProtocolVersion >= 107) teleportId = reader.ReadVarInt();
-        }
+        if (reader.Remaining != 0)
+            throw new InvalidDataException("The position packet contains unexpected trailing data.");
 
         PlayerPosition previous = position;
         if ((flags & 0x01) != 0) x += previous.X;
@@ -820,7 +847,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if ((flags & 0x08) != 0) yaw += previous.Yaw;
         if ((flags & 0x10) != 0) pitch += previous.Pitch;
         position = new PlayerPosition(x, y, z, yaw, pitch);
-        PositionChanged?.Invoke(position);
+        Raise(PositionChanged, position, isCritical: true);
 
         if (teleportId >= 0 && protocol.PacketIds.PlayServerbound.TryGetValue("teleport_confirm", out int confirmId))
             await packets!.WriteAsync(confirmId, writer => writer.WriteVarInt(teleportId), cancellationToken).ConfigureAwait(false);
@@ -829,7 +856,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             await packets!.WriteAsync(loadedId, null, cancellationToken).ConfigureAwait(false);
             playerLoadedSent = true;
-            Log?.Invoke("World loading acknowledged.");
+            Raise(Log, "World loading acknowledged.");
         }
     }
 
@@ -840,13 +867,38 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             writer.WriteString("de_de", 16);
             writer.WriteSignedByte(2);
-            if (protocol.ProtocolVersion >= 49) writer.WriteVarInt(0); else writer.WriteSignedByte(0);
+            if (protocol.Capabilities.ClientSettingsLayout == ClientSettingsPacketLayout.LegacyFiveFields)
+                writer.WriteSignedByte(0);
+            else
+                writer.WriteVarInt(0);
             writer.WriteBoolean(true);
             writer.WriteByte(0x7F);
-            if (protocol.ProtocolVersion >= 49) writer.WriteVarInt(1);
-            if (protocol.ProtocolVersion >= 755) writer.WriteBoolean(false);
-            if (protocol.ProtocolVersion >= 757) writer.WriteBoolean(true);
-            if (protocol.ProtocolVersion >= 768) writer.WriteVarInt(0);
+            switch (protocol.Capabilities.ClientSettingsLayout)
+            {
+                case ClientSettingsPacketLayout.LegacyFiveFields:
+                    break;
+                case ClientSettingsPacketLayout.MainHand:
+                    writer.WriteVarInt(1);
+                    break;
+                case ClientSettingsPacketLayout.DisableTextFiltering:
+                    writer.WriteVarInt(1);
+                    writer.WriteBoolean(false);
+                    break;
+                case ClientSettingsPacketLayout.EnableTextFilteringAndListing:
+                    writer.WriteVarInt(1);
+                    writer.WriteBoolean(false);
+                    writer.WriteBoolean(true);
+                    break;
+                case ClientSettingsPacketLayout.ParticleStatus:
+                    writer.WriteVarInt(1);
+                    writer.WriteBoolean(false);
+                    writer.WriteBoolean(true);
+                    writer.WriteVarInt(0);
+                    break;
+                case ClientSettingsPacketLayout.None:
+                default:
+                    throw new NotSupportedException("The client-settings packet layout is not supported.");
+            }
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -858,7 +910,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             writer.WriteString(protocol.ProtocolVersion >= 393 ? "minecraft:brand" : "MC|Brand");
             writer.WriteString("OeXYZ");
         }, cancellationToken).ConfigureAwait(false);
-        Log?.Invoke("Client brand announced as OeXYZ.");
+        Raise(Log, "Client brand announced as OeXYZ.");
     }
 
     private async Task DeclineResourcePackAsync(
@@ -871,9 +923,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         await packets!.WriteAsync(responseId,
             writer => WriteResourcePackDecline(writer, request, protocol.ResourcePackResponseLayout),
             cancellationToken).ConfigureAwait(false);
-        Log?.Invoke(request.Forced
+        Raise(Log, request.Forced
             ? "The server requires a resource pack. It was declined because this client does not render visual assets; the server may disconnect this session."
-            : "Optional server resource pack declined; this client does not render visual assets.");
+            : "Optional server resource pack declined; this client does not render visual assets.",
+            isCritical: request.Forced);
     }
 
     internal static ResourcePackRequest ParseResourcePackRequest(
@@ -953,7 +1006,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if (reader.ReadBoolean()) _ = reader.ReadUuid();
         if (reader.Remaining != 0)
             throw new InvalidDataException("The remove-resource-pack packet contains unexpected trailing data.");
-        Log?.Invoke("The server removed a resource-pack reference; this client had not downloaded any assets.");
+        Raise(Log, "The server removed a resource-pack reference; this client had not downloaded any assets.");
     }
 
     private void BeginCodeOfConductDecision(string contents, CancellationToken cancellationToken)
@@ -995,7 +1048,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 Require(protocol.PacketIds.ConfigurationServerbound, "accept_code_of_conduct"),
                 null,
                 cancellationToken).ConfigureAwait(false);
-            Log?.Invoke("Server code of conduct accepted by the user.");
+            Raise(Log, "Server code of conduct accepted by the user.", isCritical: true);
 
             bool finishPending;
             lock (codeOfConductLock)
@@ -1011,8 +1064,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         catch (Exception exception)
         {
             Abort(exception);
-            ConnectionFaulted?.Invoke(exception);
-            Log?.Invoke($"Connection ended: {exception.Message}");
+            Raise(ConnectionFaulted, exception, isCritical: true);
+            Raise(Log, $"Connection ended: {exception.Message}", isCritical: true);
         }
     }
 
@@ -1024,7 +1077,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             null,
             cancellationToken).ConfigureAwait(false);
         SetState(ConnectionState.Play);
-        Log?.Invoke($"Joined Minecraft {protocol.MinecraftVersion} (protocol {protocol.ProtocolVersion}).");
+        Raise(Log, $"Joined Minecraft {protocol.MinecraftVersion} (protocol {protocol.ProtocolVersion}).", isCritical: true);
         playReady.TrySetResult();
     }
 
@@ -1044,7 +1097,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             string serverHash = ComputeServerHash(serverId, sharedSecret, publicKeyBytes);
             await servicesClient.JoinServerAsync(identity, serverHash, cancellationToken).ConfigureAwait(false);
-            Log?.Invoke("Minecraft session verified.");
+            Raise(Log, "Minecraft session verified.");
         }
 
         using RSA rsa = RSA.Create();
@@ -1059,7 +1112,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             writer.WriteVarIntPrefixedBytes(encryptedToken);
         }, cancellationToken).ConfigureAwait(false);
         packets.EnableEncryption(sharedSecret);
-        Log?.Invoke("Encrypted connection enabled.");
+        Raise(Log, "Encrypted connection enabled.");
     }
 
     private async Task SendChatSessionAsync(CancellationToken cancellationToken)
@@ -1075,7 +1128,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
             writer.WriteVarIntPrefixedBytes(certificate.PublicKeyDer);
             writer.WriteVarIntPrefixedBytes(certificate.PublicKeySignatureV2);
         }, cancellationToken).ConfigureAwait(false);
-        Log?.Invoke("Secure chat session initialized.");
+        Raise(Log, "Secure chat session initialized.");
     }
 
     private void WriteChatMessage(PacketWriter writer, string message)
@@ -1200,7 +1253,93 @@ public sealed class MinecraftConnection : IAsyncDisposable
         Interlocked.Increment(ref packetsSent);
         Interlocked.Exchange(ref lastSentUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
         TracePacket(PacketDirection.Serverbound, state, packetId, payloadBytes, wireBytes);
-        MetricsChanged?.Invoke(Metrics);
+        RequestMetricsUpdate();
+    }
+
+    private void RequestMetricsUpdate(bool immediate = false)
+    {
+        if (immediate)
+        {
+            Interlocked.Exchange(ref metricsDirty, 0);
+            Raise(MetricsChanged, Metrics, isCritical: true);
+        }
+        else
+        {
+            Interlocked.Exchange(ref metricsDirty, 1);
+        }
+    }
+
+    private async Task RunMetricsPublisherAsync()
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(200));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(metricsLifetime.Token).ConfigureAwait(false))
+            {
+                if (Interlocked.Exchange(ref metricsDirty, 0) != 0)
+                    Raise(MetricsChanged, Metrics);
+            }
+        }
+        catch (OperationCanceledException) when (metricsLifetime.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void Raise(Action? handlers, bool isCritical = false)
+    {
+        if (handlers is null) return;
+        eventDispatcher.Publish(() =>
+        {
+            foreach (Delegate subscriber in handlers.GetInvocationList())
+            {
+                try { ((Action)subscriber)(); }
+                catch { Interlocked.Increment(ref subscriberFailures); }
+            }
+        }, isCritical);
+    }
+
+    private void Raise<T>(Action<T>? handlers, T value, bool isCritical = false)
+    {
+        if (handlers is null) return;
+        eventDispatcher.Publish(() =>
+        {
+            foreach (Delegate subscriber in handlers.GetInvocationList())
+            {
+                try { ((Action<T>)subscriber)(value); }
+                catch { Interlocked.Increment(ref subscriberFailures); }
+            }
+        }, isCritical);
+    }
+
+    private void Raise<T1, T2>(Action<T1, T2>? handlers, T1 first, T2 second, bool isCritical = false)
+    {
+        if (handlers is null) return;
+        eventDispatcher.Publish(() =>
+        {
+            foreach (Delegate subscriber in handlers.GetInvocationList())
+            {
+                try { ((Action<T1, T2>)subscriber)(first, second); }
+                catch { Interlocked.Increment(ref subscriberFailures); }
+            }
+        }, isCritical);
+    }
+
+    private void Raise<T1, T2, T3>(
+        Action<T1, T2, T3>? handlers,
+        T1 first,
+        T2 second,
+        T3 third,
+        bool isCritical = false)
+    {
+        if (handlers is null) return;
+        eventDispatcher.Publish(() =>
+        {
+            foreach (Delegate subscriber in handlers.GetInvocationList())
+            {
+                try { ((Action<T1, T2, T3>)subscriber)(first, second, third); }
+                catch { Interlocked.Increment(ref subscriberFailures); }
+            }
+        }, isCritical);
     }
 
     private void TryHandlePlayerInfo(byte[] payload, bool modern)
@@ -1214,7 +1353,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
         catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or ArgumentException)
         {
-            Log?.Invoke($"Ignored malformed player-list update: {exception.Message}");
+            Raise(Log, $"Ignored malformed player-list update: {exception.Message}");
         }
     }
 
@@ -1302,7 +1441,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         }
         catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or ArgumentException)
         {
-            Log?.Invoke($"Ignored malformed player-list removal: {exception.Message}");
+            Raise(Log, $"Ignored malformed player-list removal: {exception.Message}");
         }
     }
 
@@ -1360,8 +1499,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private void RaisePlayerListChanged()
     {
         IReadOnlyList<PlayerListEntry> snapshot = Players;
-        PlayerListChanged?.Invoke(snapshot);
-        MetricsChanged?.Invoke(Metrics);
+        Raise(PlayerListChanged, snapshot, isCritical: true);
+        RequestMetricsUpdate();
     }
 
     private void TracePacket(
@@ -1400,10 +1539,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
                     key = "overflow";
                 }
             }
-            UnknownPacketObserved?.Invoke(key);
+            Raise(UnknownPacketObserved, key);
         }
         if (!PacketInspectionEnabled) return;
-        PacketTraced?.Invoke(new PacketTrace(DateTimeOffset.Now, direction, packetState, packetId, name,
+        Raise(PacketTraced, new PacketTrace(DateTimeOffset.Now, direction, packetState, packetId, name,
             payloadBytes, wireBytes, known));
     }
 
@@ -1424,8 +1563,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         state = value;
         if (value == ConnectionState.Play && Interlocked.Read(ref connectedAtUtcTicks) == 0)
             Interlocked.Exchange(ref connectedAtUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
-        StateChanged?.Invoke(value);
-        MetricsChanged?.Invoke(Metrics);
+        Raise(StateChanged, value, isCritical: true);
+        RequestMetricsUpdate(immediate: true);
     }
 
     public async ValueTask DisposeAsync()
@@ -1441,7 +1580,12 @@ public sealed class MinecraftConnection : IAsyncDisposable
         {
             try { await decisionTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
         }
+        RequestMetricsUpdate(immediate: true);
+        metricsLifetime.Cancel();
+        try { await metricsPublisherTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
         if (packets is not null) await packets.DisposeAsync().ConfigureAwait(false);
+        await eventDispatcher.DisposeAsync().ConfigureAwait(false);
+        metricsLifetime.Dispose();
         lifetime.Dispose();
     }
 }

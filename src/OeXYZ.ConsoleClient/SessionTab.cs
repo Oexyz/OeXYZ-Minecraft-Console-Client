@@ -378,7 +378,8 @@ internal sealed class SessionTab : TabPage
                 session.Server,
                 session.TerminalException?.Message,
                 session.RecentDiagnostics,
-                session.UnknownPacketStatistics));
+                session.UnknownPacketStatistics,
+                Snapshot: session.Snapshot));
             BrandMessageBox.Show(this,
                 "The sanitized package was created. It excludes account tokens, accounts.bin, passwords and full private chat history.",
                 "Support package ready", MessageBoxButtons.OK, MessageBoxIcon.Information);

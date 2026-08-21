@@ -60,7 +60,51 @@ public sealed record ProtocolDefinition(
     bool HasConfiguration,
     ResourcePackRequestLayout ResourcePackRequestLayout,
     ResourcePackResponseLayout ResourcePackResponseLayout,
+    ProtocolCapabilities Capabilities,
     PacketIdGroups PacketIds);
+
+public sealed record ProtocolCapabilities(
+    PositionPacketLayout PositionLayout,
+    ClientSettingsPacketLayout ClientSettingsLayout,
+    ChatPacketLayout ChatLayout,
+    PlayerInfoPacketLayout PlayerInfoLayout,
+    bool Cookies,
+    bool Transfer,
+    bool Configuration,
+    bool CodeOfConduct);
+
+public enum PositionPacketLayout
+{
+    None,
+    LegacyCoordinates,
+    TeleportId,
+    TeleportIdWithDismount,
+    RelativeVelocity
+}
+
+public enum ClientSettingsPacketLayout
+{
+    None,
+    LegacyFiveFields,
+    MainHand,
+    DisableTextFiltering,
+    EnableTextFilteringAndListing,
+    ParticleStatus
+}
+
+public enum ChatPacketLayout
+{
+    Legacy,
+    Signed,
+    SignedSession
+}
+
+public enum PlayerInfoPacketLayout
+{
+    None,
+    LegacyAction,
+    ModernBitSet
+}
 
 public enum ResourcePackRequestLayout
 {

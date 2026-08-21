@@ -18,6 +18,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -61,6 +71,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -104,6 +124,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -147,6 +177,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -190,6 +230,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -233,6 +283,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -276,6 +336,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -319,6 +389,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -362,6 +442,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -405,6 +495,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "LegacyCoordinates",
+        "clientSettingsLayout": "LegacyFiveFields",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -448,6 +548,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -492,6 +602,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -536,6 +656,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -580,6 +710,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -624,6 +764,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "HashAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -668,6 +818,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -712,6 +872,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -756,6 +926,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -800,6 +980,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -844,6 +1034,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -888,6 +1088,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -932,6 +1142,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -976,6 +1196,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1020,6 +1250,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1064,6 +1304,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1110,6 +1360,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1156,6 +1416,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1202,6 +1472,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1248,6 +1528,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1294,6 +1584,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1340,6 +1640,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1386,6 +1696,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1432,6 +1752,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1478,6 +1808,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1524,6 +1864,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1570,6 +1920,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1616,6 +1976,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1662,6 +2032,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1708,6 +2088,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1754,6 +2144,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1800,6 +2200,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHash",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "MainHand",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1846,6 +2256,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "DisableTextFiltering",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1895,6 +2315,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "DisableTextFiltering",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1944,6 +2374,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -1993,6 +2433,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2042,6 +2492,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Legacy",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2091,6 +2551,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Signed",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2142,6 +2612,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Signed",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2193,6 +2673,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "Signed",
+        "playerInfoLayout": "LegacyAction",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2244,6 +2734,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportIdWithDismount",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2298,6 +2798,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2352,6 +2862,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2406,6 +2926,16 @@
       "hasConfiguration": false,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": false,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2460,6 +2990,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UrlHashForcedPrompt",
       "resourcePackResponseLayout": "StatusOnly",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2532,6 +3072,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2606,6 +3156,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": false,
+        "transfer": false,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2680,6 +3240,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2762,6 +3332,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2844,6 +3424,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -2926,6 +3516,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3008,6 +3608,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3090,6 +3700,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3172,6 +3792,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3255,6 +3885,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3338,6 +3978,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3421,6 +4071,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "TeleportId",
+        "clientSettingsLayout": "EnableTextFilteringAndListing",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3503,6 +4163,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": false
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3586,6 +4256,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3671,6 +4351,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3756,6 +4446,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3841,6 +4541,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -3926,6 +4636,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -4011,6 +4731,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,
@@ -4096,6 +4826,16 @@
       "hasConfiguration": true,
       "resourcePackRequestLayout": "UuidUrlHashForcedPrompt",
       "resourcePackResponseLayout": "UuidAndStatus",
+      "capabilities": {
+        "positionLayout": "RelativeVelocity",
+        "clientSettingsLayout": "ParticleStatus",
+        "chatLayout": "SignedSession",
+        "playerInfoLayout": "ModernBitSet",
+        "cookies": true,
+        "transfer": true,
+        "configuration": true,
+        "codeOfConduct": true
+      },
       "packetIds": {
         "loginClientbound": {
           "disconnect": 0,

@@ -15,6 +15,32 @@ public sealed class ProfileConcurrencyException : IOException
     public long CurrentRevision { get; }
 }
 
+public sealed record ProfileRecoveryState(
+    bool PrimaryExists,
+    bool PrimaryValid,
+    bool BackupExists,
+    bool BackupValid,
+    string? PrimaryError,
+    string? BackupError)
+{
+    public bool CanRestore => !PrimaryValid && BackupValid;
+}
+
+public sealed record ProfileRecoveryResult(
+    ProfileDocument Document,
+    string? PreservedCorruptPath);
+
+public sealed class ProfileRecoveryAvailableException : IOException
+{
+    public ProfileRecoveryAvailableException(ProfileRecoveryState recovery, Exception innerException)
+        : base("profiles.json is invalid, but a valid backup is available for explicit recovery.", innerException)
+    {
+        Recovery = recovery;
+    }
+
+    public ProfileRecoveryState Recovery { get; }
+}
+
 public sealed class ProfileRepository
 {
     public const long MaximumProfileBytes = 2L * 1024L * 1024L;
@@ -59,6 +85,46 @@ public sealed class ProfileRepository
 
             baselineView = DeepClone(document);
             return document;
+        }
+    }
+
+    public ProfileRecoveryState InspectRecovery()
+    {
+        lock (stateLock)
+        {
+            string? directory = System.IO.Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                return new ProfileRecoveryState(false, false, false, false, null, null);
+            using FileStream repositoryLock = AcquireLock();
+            return InspectRecoveryUnlocked();
+        }
+    }
+
+    public ProfileRecoveryResult RestoreBackup()
+    {
+        lock (stateLock)
+        {
+            EnsureDirectory();
+            using FileStream repositoryLock = AcquireLock();
+            ProfileRecoveryState recovery = InspectRecoveryUnlocked();
+            if (!recovery.CanRestore)
+                throw new InvalidOperationException("A valid backup is not available for explicit profile recovery.");
+
+            byte[] backup = ReadBoundedBytes(BackupPath, "profiles.json.bak");
+            _ = Deserialize(backup, "profiles.json.bak");
+            string? corruptPath = null;
+            if (File.Exists(path))
+            {
+                corruptPath = path + ".corrupt-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss-fff") +
+                              "-" + Guid.NewGuid().ToString("N")[..8];
+                File.Copy(path, corruptPath, overwrite: false);
+                PrivateFileSystem.ProtectFile(corruptPath);
+            }
+
+            PrivateFileSystem.WriteAllBytesAtomically(path, backup);
+            ProfileDocument restored = ReadProfileFile(path, "profiles.json");
+            baselineView = DeepClone(restored);
+            return new ProfileRecoveryResult(restored, corruptPath);
         }
     }
 
@@ -124,19 +190,85 @@ public sealed class ProfileRepository
 
     private ProfileDocument LoadUnlocked()
     {
-        if (!File.Exists(path)) return new ProfileDocument();
-        if (new FileInfo(path).Length > MaximumProfileBytes)
-            throw new InvalidDataException("profiles.json exceeds the 2 MiB safety limit.");
+        if (!File.Exists(path))
+        {
+            ProfileRecoveryState missingPrimary = InspectRecoveryUnlocked();
+            if (missingPrimary.CanRestore)
+                throw new ProfileRecoveryAvailableException(
+                    missingPrimary,
+                    new FileNotFoundException("profiles.json is missing while a valid backup exists.", path));
+            return new ProfileDocument();
+        }
         try
         {
-            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-            ProfileDocument document = JsonSerializer.Deserialize<ProfileDocument>(stream, Options)
-                                       ?? throw new InvalidDataException("The profile file is empty or invalid.");
+            return ReadProfileFile(path, "profiles.json");
+        }
+        catch (InvalidDataException exception)
+        {
+            ProfileRecoveryState recovery = InspectRecoveryUnlocked(exception.Message);
+            if (recovery.CanRestore) throw new ProfileRecoveryAvailableException(recovery, exception);
+            throw;
+        }
+    }
+
+    private ProfileRecoveryState InspectRecoveryUnlocked(string? knownPrimaryError = null)
+    {
+        bool primaryExists = File.Exists(path);
+        bool backupExists = File.Exists(BackupPath);
+        bool primaryValid = TryValidate(path, "profiles.json", out string? primaryError);
+        bool backupValid = TryValidate(BackupPath, "profiles.json.bak", out string? backupError);
+        return new ProfileRecoveryState(
+            primaryExists,
+            primaryValid,
+            backupExists,
+            backupValid,
+            knownPrimaryError ?? primaryError,
+            backupError);
+    }
+
+    private static bool TryValidate(string file, string label, out string? error)
+    {
+        if (!File.Exists(file))
+        {
+            error = null;
+            return false;
+        }
+        try
+        {
+            _ = ReadProfileFile(file, label);
+            error = null;
+            return true;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            error = exception.Message;
+            return false;
+        }
+    }
+
+    private static ProfileDocument ReadProfileFile(string file, string label) =>
+        Deserialize(ReadBoundedBytes(file, label), label);
+
+    private static byte[] ReadBoundedBytes(string file, string label)
+    {
+        long length = new FileInfo(file).Length;
+        if (length > MaximumProfileBytes)
+            throw new InvalidDataException($"{label} exceeds the 2 MiB safety limit.");
+        if (length < 0) throw new InvalidDataException($"{label} has an invalid length.");
+        return File.ReadAllBytes(file);
+    }
+
+    private static ProfileDocument Deserialize(byte[] json, string label)
+    {
+        try
+        {
+            ProfileDocument document = JsonSerializer.Deserialize<ProfileDocument>(json, Options)
+                                       ?? throw new InvalidDataException($"{label} is empty or invalid.");
             return document.Normalize();
         }
         catch (JsonException exception)
         {
-            throw new InvalidDataException("profiles.json contains invalid JSON or profile values.", exception);
+            throw new InvalidDataException($"{label} contains invalid JSON or profile values.", exception);
         }
     }
 

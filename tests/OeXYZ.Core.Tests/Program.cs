@@ -144,6 +144,70 @@ Run("profile repository creates a migration backup", () =>
     }
 });
 
+Run("profile backup recovery is explicit atomic and preserves corrupt input", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "oexyz-profile-recovery-tests", Guid.NewGuid().ToString("N"));
+    string path = Path.Combine(root, "profiles.json");
+    try
+    {
+        ProfileRepository repository = new(path);
+        ProfileDocument first = new()
+        {
+            Accounts = [new AccountProfile
+            {
+                DisplayName = "Backup account",
+                Kind = AccountKind.Offline,
+                LoginHint = "BackupUser"
+            }]
+        };
+        repository.Save(first);
+        ProfileDocument second = repository.Load();
+        second.Accounts[0] = second.Accounts[0] with { DisplayName = "Current account" };
+        repository.Save(second);
+        byte[] validatedBackup = File.ReadAllBytes(repository.BackupPath);
+
+        File.WriteAllText(path, "{ corrupt primary");
+        ProfileRecoveryState state = repository.InspectRecovery();
+        True(state.PrimaryExists && !state.PrimaryValid && state.BackupExists && state.BackupValid && state.CanRestore,
+            "A valid backup was not offered for explicit recovery.");
+        Throws<ProfileRecoveryAvailableException>(() => repository.Load());
+
+        ProfileRecoveryResult recovered = repository.RestoreBackup();
+        Equal("Backup account", recovered.Document.Accounts.Single().DisplayName);
+        True(recovered.PreservedCorruptPath is not null && File.Exists(recovered.PreservedCorruptPath),
+            "The corrupt primary profile was not preserved.");
+        True(File.ReadAllText(recovered.PreservedCorruptPath!).Contains("corrupt primary", StringComparison.Ordinal),
+            "The preserved corrupt profile did not retain the original bytes.");
+        True(validatedBackup.AsSpan().SequenceEqual(File.ReadAllBytes(repository.BackupPath)),
+            "Recovery modified the validated backup.");
+        Equal("Backup account", repository.Load().Accounts.Single().DisplayName);
+        if (!OperatingSystem.IsWindows())
+        {
+            True(PrivateFileSystem.HasPrivateUnixPermissions(path), "The recovered profile is not private.");
+            True(PrivateFileSystem.HasPrivateUnixPermissions(recovered.PreservedCorruptPath!),
+                "The preserved corrupt profile is not private.");
+        }
+
+        File.Delete(path);
+        Throws<ProfileRecoveryAvailableException>(() => repository.Load());
+        ProfileRecoveryResult missingPrimary = repository.RestoreBackup();
+        True(missingPrimary.PreservedCorruptPath is null,
+            "Recovery invented a corrupt-file copy when the primary was missing.");
+
+        File.WriteAllText(path, "{ bad primary");
+        File.WriteAllText(repository.BackupPath, "{ bad backup");
+        ProfileRecoveryState invalid = repository.InspectRecovery();
+        True(!invalid.CanRestore && !invalid.PrimaryValid && !invalid.BackupValid,
+            "An invalid backup was offered for recovery.");
+        Throws<InvalidDataException>(() => repository.Load());
+        Throws<InvalidOperationException>(() => repository.RestoreBackup());
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+});
+
 Run("profile repository rejects oversized local configuration", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), "oexyz-profile-limit-tests", Guid.NewGuid().ToString("N"));

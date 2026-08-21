@@ -222,7 +222,11 @@ internal sealed class ProtocolInspectorForm : Form
             if (packets.Items.Count > 0) packets.EnsureVisible(packets.Items.Count - 1);
         }
         finally { packets.EndUpdate(); }
-        statistics.Text = string.Join(Environment.NewLine, session.UnknownPacketStatistics
+        SessionSnapshot snapshot = session.Snapshot;
+        string counters = $"Dropped events: {snapshot.DroppedEvents} | Dropped logs: {snapshot.DroppedLogLines} | " +
+                          $"Subscriber failures: {snapshot.SubscriberFailures} | Outbound rejections: {snapshot.OutboundRejections} | " +
+                          $"Unknown overflow: {snapshot.UnknownPacketOverflow}";
+        statistics.Text = counters + Environment.NewLine + string.Join(Environment.NewLine, session.UnknownPacketStatistics
             .OrderByDescending(item => item.Value)
             .Select(item => $"{item.Key,-40} : {item.Value}"));
     }

@@ -400,6 +400,7 @@ RunGui("pending GUI lines are thread-safe and drop the oldest at capacity", () =
     Parallel.For(0, SessionTab.MaximumPendingLines * 20, concurrent.Enqueue);
     True(concurrent.Count == SessionTab.MaximumPendingLines,
         "Concurrent producers exceeded the GUI pending-line capacity.");
+    True(concurrent.Dropped > 0, "Concurrent GUI queue drops were not counted.");
     int concurrentDrained = 0;
     while (concurrent.TryDequeue(out _)) concurrentDrained++;
     True(concurrentDrained == SessionTab.MaximumPendingLines,
@@ -411,6 +412,7 @@ RunGui("pending GUI lines are thread-safe and drop the oldest at capacity", () =
     while (ordered.TryDequeue(out int value)) retained.Add(value);
     True(retained.SequenceEqual([6, 7, 8, 9]),
         "The bounded GUI queue did not discard the oldest pending lines.");
+    True(ordered.Dropped == 6, "The bounded GUI queue drop count is incorrect.");
 });
 
 Console.WriteLine($"PASS: {passed.Count} updater tests");

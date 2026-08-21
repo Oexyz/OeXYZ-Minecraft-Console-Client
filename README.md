@@ -42,8 +42,8 @@ Download the archive matching your Windows computer from the
 
 | System | Release asset |
 |---|---|
-| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.3.1-win-x64.zip` |
-| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.3.1-win-arm64.zip` |
+| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.4.0-win-x64.zip` |
+| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.4.0-win-arm64.zip` |
 
 ### Linux installer
 
@@ -478,6 +478,13 @@ single-file CLI, verified its SHA-256, retained concurrent profile updates, and
 preserved private file modes. Raspberry Pi 3 device-specific qualification is
 still pending and requires a 64-bit OS.
 See the [deployment guide](docs/DEPLOYMENT.md) for the exact current boundary.
+
+### v1.4 â€” Transport and diagnostics stability âœ… complete
+
+Released in v1.4.0: one ordered bounded outbound writer, isolated bounded
+subscriber delivery, coalesced metrics, visible drop counters, resilient status
+Ping/Pong parsing, explicit profile-backup recovery, and generated headless
+protocol capabilities across the supported catalog.
 
 ## Responsible use
 

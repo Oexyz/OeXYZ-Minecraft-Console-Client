@@ -2,6 +2,7 @@ using OeXYZ.Protocol;
 using System.Net;
 using System.Net.Sockets;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -30,6 +31,22 @@ Run("required packet maps", () =>
     True(latest.PacketIds.PlayServerbound.ContainsKey("pong"), "Current play pong response is missing.");
     True(legacy.PacketIds.PlayClientbound.ContainsKey("player_info"), "Legacy player-list packet is missing.");
     True(latest.PacketIds.PlayClientbound.ContainsKey("player_info") || latest.PacketIds.PlayClientbound.ContainsKey("player_info_update"), "Current player-list packet is missing.");
+    Equal(PositionPacketLayout.LegacyCoordinates, legacy.Capabilities.PositionLayout);
+    Equal(ClientSettingsPacketLayout.LegacyFiveFields, legacy.Capabilities.ClientSettingsLayout);
+    Equal(ChatPacketLayout.Legacy, legacy.Capabilities.ChatLayout);
+    Equal(PlayerInfoPacketLayout.LegacyAction, legacy.Capabilities.PlayerInfoLayout);
+    Equal(PositionPacketLayout.RelativeVelocity, latest.Capabilities.PositionLayout);
+    Equal(ClientSettingsPacketLayout.ParticleStatus, latest.Capabilities.ClientSettingsLayout);
+    Equal(ChatPacketLayout.SignedSession, latest.Capabilities.ChatLayout);
+    Equal(PlayerInfoPacketLayout.ModernBitSet, latest.Capabilities.PlayerInfoLayout);
+    True(latest.Capabilities.Configuration && latest.Capabilities.Cookies &&
+         latest.Capabilities.Transfer && latest.Capabilities.CodeOfConduct,
+        "Current protocol capabilities are incomplete.");
+    True(catalog.Versions.All(version =>
+            version.Capabilities.PositionLayout != PositionPacketLayout.None &&
+            version.Capabilities.ClientSettingsLayout != ClientSettingsPacketLayout.None &&
+            version.Capabilities.PlayerInfoLayout != PlayerInfoPacketLayout.None),
+        "A supported protocol lacks a headless-session capability layout.");
 });
 
 Run("resource-pack capabilities and bounded decline codecs", () =>
@@ -163,6 +180,40 @@ Run("server status text is terminal-safe and field-bounded", () =>
     True(IsTerminalSafe(status.VersionName), "The status version still contains terminal controls.");
     True(IsTerminalSafe(status.Description), "The status MOTD still contains terminal controls.");
     Equal(42, status.PingMilliseconds);
+
+    MinecraftServerStatus minimal = MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"), "{\"version\":{\"protocol\":776}}", 7);
+    Equal("Unknown", minimal.VersionName);
+    Equal(0, minimal.PlayersOnline);
+    Equal(0, minimal.PlayersMaximum);
+    Equal(string.Empty, minimal.Description);
+
+    MinecraftServerStatus malformedOptional = MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"),
+        "{\"version\":{\"protocol\":776,\"name\":7},\"players\":\"unknown\",\"description\":5,\"favicon\":false}",
+        8);
+    Equal("Unknown", malformedOptional.VersionName);
+    Equal(0, malformedOptional.PlayersOnline);
+    True(malformedOptional.ServerIconPng is null, "A non-string favicon was accepted.");
+
+    MinecraftServerStatus negativePlayers = MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"),
+        "{\"version\":{\"protocol\":776},\"players\":{\"online\":-5,\"max\":-1}}",
+        9);
+    Equal(0, negativePlayers.PlayersOnline);
+    Equal(0, negativePlayers.PlayersMaximum);
+    Throws<InvalidDataException>(() => MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"), "{\"version\":{}}", 1));
+    string deepJson = "{\"version\":{\"protocol\":776},\"description\":" +
+                      string.Concat(Enumerable.Repeat("{\"extra\":", 40)) + "\"deep\"" +
+                      new string('}', 40) + "}";
+    Throws<JsonException>(() => MinecraftServerDiscovery.ParseResponse(
+        ServerAddress.Parse("example.org"), deepJson, 1));
+});
+
+Run("server status performs ping-pong with close-after-response fallback", () =>
+{
+    VerifyStatusPingAsync().GetAwaiter().GetResult();
 });
 
 Run("portable DNS SRV parser is bounded and preserves target ports", () =>
@@ -483,6 +534,16 @@ Run("framing rejects invalid lengths truncation and compression bombs", () =>
     VerifyFramingGuardsAsync().GetAwaiter().GetResult();
 });
 
+Run("outbound dispatcher serializes payload state and prioritizes control", () =>
+{
+    VerifyOutboundDispatcherAsync().GetAwaiter().GetResult();
+});
+
+Run("event dispatcher isolates subscribers and bounds slow-consumer floods", () =>
+{
+    VerifyEventDispatcherAsync().GetAwaiter().GetResult();
+});
+
 Run("fragmented one-byte transport is reassembled", () =>
 {
     VerifyFragmentedFrameAsync().GetAwaiter().GetResult();
@@ -598,6 +659,14 @@ static async Task VerifyConnectedDisconnectAsync()
             "DisconnectTest",
             protocol,
             initialPingMilliseconds: 321);
+        int metricNotifications = 0;
+        connection.Log += _ => throw new InvalidOperationException("Injected log subscriber failure.");
+        connection.StateChanged += _ =>
+        {
+            Thread.Sleep(50);
+            throw new InvalidOperationException("Injected slow state subscriber failure.");
+        };
+        connection.MetricsChanged += _ => Interlocked.Increment(ref metricNotifications);
         await connection.ConnectAsync(timeout.Token);
         Equal(ConnectionState.Play, connection.State);
         await WaitUntilAsync(() => connection.Players.Count == 1, TimeSpan.FromSeconds(2));
@@ -623,6 +692,12 @@ static async Task VerifyConnectedDisconnectAsync()
             "Unknown packet keys exceeded their hard bound while inspection was disabled.");
         True(connection.UnknownPacketOverflowCount > 0,
             "Discarded unknown packet IDs were not represented by an overflow counter.");
+        await WaitUntilAsync(() => connection.Metrics.SubscriberFailures > 0, TimeSpan.FromSeconds(2));
+        True(connection.TerminalException is null,
+            "A slow or throwing event subscriber terminated the network connection.");
+        await Task.Delay(300, timeout.Token);
+        True(Volatile.Read(ref metricNotifications) <= 10,
+            "Metrics notifications were not coalesced to a bounded update rate.");
 
         connection.Disconnect();
         connection.Disconnect();
@@ -693,6 +768,40 @@ static async Task VerifyFramingGuardsAsync()
     await using MinecraftPacketStream encryptedPackets = new(encryptedSource);
     encryptedPackets.EnableEncryption(new byte[16]);
     await ThrowsAsync<EndOfStreamException>(async () => { _ = await encryptedPackets.ReadAsync(CancellationToken.None); });
+}
+
+static async Task VerifyStatusPingAsync()
+{
+    await VerifyStatusServerAsync(closeBeforePong: false);
+    await VerifyStatusServerAsync(closeBeforePong: true);
+}
+
+static async Task VerifyStatusServerAsync(bool closeBeforePong)
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+    Task server = Task.Run(async () =>
+    {
+        using TcpClient peer = await listener.AcceptTcpClientAsync(timeout.Token);
+        await using MinecraftPacketStream packets = new(peer.GetStream());
+        _ = await packets.ReadAsync(timeout.Token);
+        _ = await packets.ReadAsync(timeout.Token);
+        await packets.WriteAsync(0, writer => writer.WriteString(
+            "{\"version\":{\"name\":\"Local\",\"protocol\":776}}"), timeout.Token);
+        if (closeBeforePong) return;
+        InboundPacket ping = await packets.ReadAsync(timeout.Token);
+        Equal(1, ping.Id);
+        PacketReader pingReader = new(ping.Payload);
+        long nonce = pingReader.ReadLong();
+        await packets.WriteAsync(1, writer => writer.WriteLong(nonce), timeout.Token);
+    }, timeout.Token);
+    MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(
+        "127.0.0.1", port, TimeSpan.FromSeconds(3), timeout.Token);
+    Equal(776, status.ProtocolVersion);
+    True(status.PingMilliseconds >= 0, "Status latency was negative.");
+    await server.WaitAsync(TimeSpan.FromSeconds(2));
 }
 
 static async Task VerifyDnsTransportAsync()
@@ -1125,6 +1234,107 @@ static async Task VerifyFragmentedFrameAsync()
     InboundPacket packet = await packets.ReadAsync(CancellationToken.None);
     Equal(0x2A, packet.Id);
     True(packet.Payload.AsSpan().SequenceEqual(new byte[] { 1, 2 }), "Fragmented payload changed.");
+}
+
+static async Task VerifyOutboundDispatcherAsync()
+{
+    await using MemoryStream transport = new();
+    await using MinecraftPacketStream packets = new(transport);
+    int nextSequence = 0;
+    int activeBuilders = 0;
+    int maximumBuilders = 0;
+    Task[] sends = Enumerable.Range(0, 100).Select(index => Task.Run(async () =>
+    {
+        await packets.WriteAsync(0x55, writer =>
+        {
+            int active = Interlocked.Increment(ref activeBuilders);
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref maximumBuilders);
+                if (observed >= active) break;
+            } while (Interlocked.CompareExchange(ref maximumBuilders, active, observed) != observed);
+            int sequence = Interlocked.Increment(ref nextSequence);
+            Thread.SpinWait(10_000);
+            writer.WriteVarInt(sequence);
+            Interlocked.Decrement(ref activeBuilders);
+        }, CancellationToken.None, OutboundPacketPriority.Normal);
+    })).ToArray();
+    await Task.WhenAll(sends).WaitAsync(TimeSpan.FromSeconds(5));
+    Equal(1, maximumBuilders);
+    IReadOnlyList<(int Id, byte[] Payload)> frames = DecodeFrames(transport.ToArray());
+    Equal(100, frames.Count);
+    for (int index = 0; index < frames.Count; index++)
+    {
+        Equal(0x55, frames[index].Id);
+        PacketReader payload = new(frames[index].Payload);
+        Equal(index + 1, payload.ReadVarInt());
+    }
+
+    await using MemoryStream priorityTransport = new();
+    await using MinecraftPacketStream priorityPackets = new(priorityTransport);
+    using ManualResetEventSlim firstBuilderStarted = new();
+    using ManualResetEventSlim releaseFirstBuilder = new();
+    Task first = Task.Run(async () => await priorityPackets.WriteAsync(0x10, _ =>
+    {
+        firstBuilderStarted.Set();
+        releaseFirstBuilder.Wait(TimeSpan.FromSeconds(2));
+    }, CancellationToken.None, OutboundPacketPriority.Normal));
+    True(firstBuilderStarted.Wait(TimeSpan.FromSeconds(2)), "The first normal packet did not enter the writer.");
+    Task[] backlog = Enumerable.Range(0, 32).Select(_ => Task.Run(async () =>
+        await priorityPackets.WriteAsync(0x11, null, CancellationToken.None, OutboundPacketPriority.Normal))).ToArray();
+    Task critical = Task.Run(async () =>
+        await priorityPackets.WriteAsync(0x7E, null, CancellationToken.None, OutboundPacketPriority.Critical));
+    releaseFirstBuilder.Set();
+    await Task.WhenAll([first, critical, .. backlog]).WaitAsync(TimeSpan.FromSeconds(5));
+    IReadOnlyList<(int Id, byte[] Payload)> priorityFrames = DecodeFrames(priorityTransport.ToArray());
+    Equal(0x10, priorityFrames[0].Id);
+    True(priorityFrames.Take(3).Any(frame => frame.Id == 0x7E),
+        "A critical control packet remained behind the normal backlog.");
+}
+
+static IReadOnlyList<(int Id, byte[] Payload)> DecodeFrames(byte[] bytes)
+{
+    List<(int Id, byte[] Payload)> frames = [];
+    PacketReader input = new(bytes);
+    while (input.Remaining > 0)
+    {
+        int frameLength = input.ReadVarInt();
+        if (frameLength <= 0 || frameLength > input.Remaining)
+            throw new InvalidDataException("The outbound test frame length is invalid.");
+        PacketReader frame = new(input.ReadBytes(frameLength));
+        int packetId = frame.ReadVarInt();
+        frames.Add((packetId, frame.ReadRemaining().ToArray()));
+    }
+    return frames;
+}
+
+static async Task VerifyEventDispatcherAsync()
+{
+    int failures = 0;
+    await using ProtocolEventDispatcher dispatcher = new(_ => Interlocked.Increment(ref failures));
+    using ManualResetEventSlim blocked = new();
+    using ManualResetEventSlim release = new();
+    dispatcher.Publish(() =>
+    {
+        blocked.Set();
+        release.Wait(TimeSpan.FromSeconds(2));
+    });
+    True(blocked.Wait(TimeSpan.FromSeconds(2)), "The event worker did not start its blocked subscriber.");
+    Stopwatch publishTime = Stopwatch.StartNew();
+    for (int index = 0; index < ProtocolEventDispatcher.NormalCapacity * 3; index++)
+        dispatcher.Publish(static () => { });
+    TaskCompletionSource criticalDelivered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    dispatcher.Publish(() => criticalDelivered.TrySetResult(), isCritical: true);
+    dispatcher.Publish(() => throw new InvalidOperationException("Injected event subscriber failure."),
+        isCritical: true);
+    publishTime.Stop();
+    True(publishTime.Elapsed < TimeSpan.FromSeconds(1),
+        "A slow subscriber applied backpressure to the network-facing publisher.");
+    True(dispatcher.Dropped > 0, "A saturated event queue did not report drops.");
+    release.Set();
+    await criticalDelivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    await WaitUntilAsync(() => Volatile.Read(ref failures) > 0, TimeSpan.FromSeconds(2));
 }
 
 static async Task VerifyCfb8StreamAsync()

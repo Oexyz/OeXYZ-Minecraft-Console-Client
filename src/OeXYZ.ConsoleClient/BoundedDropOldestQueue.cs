@@ -4,6 +4,7 @@ internal sealed class BoundedDropOldestQueue<T>
 {
     private readonly object gate = new();
     private readonly Queue<T> items;
+    private long dropped;
 
     public BoundedDropOldestQueue(int capacity)
     {
@@ -23,12 +24,17 @@ internal sealed class BoundedDropOldestQueue<T>
     }
 
     public bool IsEmpty => Count == 0;
+    public long Dropped => Interlocked.Read(ref dropped);
 
     public void Enqueue(T item)
     {
         lock (gate)
         {
-            if (items.Count == Capacity) items.Dequeue();
+            if (items.Count == Capacity)
+            {
+                items.Dequeue();
+                Interlocked.Increment(ref dropped);
+            }
             items.Enqueue(item);
         }
     }
