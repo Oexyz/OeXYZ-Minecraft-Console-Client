@@ -337,6 +337,14 @@ public sealed class ProfileRepository
                 "server profile",
                 baseline.Revision,
                 current.Revision),
+            ProxyProfiles = MergeById(
+                baseline.ProxyProfiles,
+                proposed.ProxyProfiles,
+                current.ProxyProfiles,
+                proxy => proxy.Id,
+                "proxy profile",
+                baseline.Revision,
+                current.Revision),
             Settings = MergeValue(
                 baseline.Settings,
                 proposed.Settings,

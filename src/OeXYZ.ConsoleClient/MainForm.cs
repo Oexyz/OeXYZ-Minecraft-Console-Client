@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using OeXYZ.Authentication;
 using OeXYZ.Core;
 using OeXYZ.Protocol;
@@ -488,7 +489,7 @@ internal sealed class MainForm : Form
 
     private void AddServer()
     {
-        using ServerDialog dialog = new(null);
+        using ServerDialog dialog = new(null, profiles.ProxyProfiles);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
         ServerProfile added = dialog.Result;
         UpdateAndRefresh(current => ProfileUiOperations.AddServer(current, added), null, added.Id);
@@ -499,7 +500,7 @@ internal sealed class MainForm : Form
         ServerProfile? profile = SelectedServer();
         if (profile is null) { SelectHint("server"); return; }
         long expectedRevision = profiles.Revision;
-        using ServerDialog dialog = new(profile);
+        using ServerDialog dialog = new(profile, profiles.ProxyProfiles);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result is null) return;
         ServerProfile replacement = dialog.Result;
         UpdateAndRefresh(
@@ -578,9 +579,11 @@ internal sealed class MainForm : Form
         // session its own record so an unsuccessful persistence attempt cannot
         // silently mutate the profile document displayed by the UI.
         AccountProfile sessionAccount = account with { };
+        IConnectionDialer dialer = CreateConnectionDialer(server);
         ConsoleSession session = new(sessionAccount, server, authentication,
             () => ProfilesChangedFromSession(sessionAccount), AppPaths.Logs,
-            profiles.Settings.ProtocolInspectorEnabled);
+            profiles.Settings.ProtocolInspectorEnabled,
+            dialer);
         SessionTab page = new(session);
         session.NotificationRequested += ShowSessionNotification;
         session.ConnectedChanged += _ => PostToUi(UpdateTrayMenu);
@@ -594,6 +597,28 @@ internal sealed class MainForm : Form
         sessions.SelectedTab = page;
         session.Start();
         UpdateTrayMenu();
+    }
+
+    private IConnectionDialer CreateConnectionDialer(ServerProfile server)
+    {
+        if (server.ProxyProfileId is not Guid proxyId) return DirectConnectionDialer.Instance;
+        ProxyProfile proxy = profiles.ProxyProfiles.Single(item => item.Id == proxyId);
+        if (proxy.Kind == ProxyKind.Direct) return DirectConnectionDialer.Instance;
+        byte[]? password = null;
+        try
+        {
+            if (proxy.SecretReference is not null)
+            {
+                using LocalSecretStore store = new(AppPaths.Secrets);
+                password = store.GetAsync(proxy.SecretReference).GetAwaiter().GetResult()
+                    ?? throw new InvalidDataException($"Proxy '{proxy.DisplayName}' has no protected password.");
+            }
+            return new ProxyConnectionDialer(proxy, password ?? []);
+        }
+        finally
+        {
+            if (password is not null) CryptographicOperations.ZeroMemory(password);
+        }
     }
 
     private void ProfilesChangedFromSession(AccountProfile changedAccount)
@@ -879,10 +904,13 @@ internal sealed class MainForm : Form
             try
             {
                 CachedServerStatus result;
+                IConnectionDialer? statusDialer = null;
                 try
                 {
+                    statusDialer = CreateConnectionDialer(server);
                     MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(
-                        server.Address, server.CustomPort, TimeSpan.FromSeconds(6), cancellationToken).ConfigureAwait(false);
+                        server.Address, server.CustomPort, TimeSpan.FromSeconds(6), cancellationToken, statusDialer)
+                        .ConfigureAwait(false);
                     result = new CachedServerStatus(DateTimeOffset.UtcNow, status, null);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -892,6 +920,10 @@ internal sealed class MainForm : Form
                 catch (Exception exception)
                 {
                     result = new CachedServerStatus(DateTimeOffset.UtcNow, null, exception.Message);
+                }
+                finally
+                {
+                    if (statusDialer is IDisposable disposable) disposable.Dispose();
                 }
                 lock (serverStatusCache) serverStatusCache[server.Id] = result;
                 PostServerStatus(server.Id, result);

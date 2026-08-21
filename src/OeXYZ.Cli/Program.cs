@@ -44,6 +44,8 @@ internal static class CliApplication
                 return GenerateAccountKey(options.Target);
 
             ApplicationPaths paths = ApplicationPaths.Resolve(options.ConfigPath);
+            if (options.Command is "control-token-create" or "control-token-check")
+                return ManageControlToken(paths, options, options.Command == "control-token-create");
             ProfileRepository repository = new(paths.Profiles);
             if (options.Command == "doctor")
                 return await RunDoctorAsync(repository, paths, options).ConfigureAwait(false);
@@ -60,7 +62,19 @@ internal static class CliApplication
                 "account-add-microsoft" => AddAccount(profiles, repository, options, AccountKind.Microsoft),
                 "account-login" => await LoginAccountAsync(profiles, repository, paths, options).ConfigureAwait(false),
                 "server-add" => AddServer(profiles, repository, options),
-                "status" => await ShowStatusAsync(profiles, options).ConfigureAwait(false),
+                "proxy-add" => AddProxy(profiles, repository, options),
+                "proxy-list" => ListProxies(profiles, options.JsonOutput),
+                "proxy-delete" => DeleteProxy(profiles, repository, options.Target),
+                "proxy-set-credentials" => await SetProxyCredentialsAsync(
+                    profiles, repository, paths, options, clear: false).ConfigureAwait(false),
+                "proxy-clear-credentials" => await SetProxyCredentialsAsync(
+                    profiles, repository, paths, options, clear: true).ConfigureAwait(false),
+                "failover-list" => ListFailoverEndpoints(profiles, options.Target, options.JsonOutput),
+                "failover-add" => AddFailoverEndpoint(profiles, repository, options),
+                "failover-delete" => DeleteFailoverEndpoint(profiles, repository, options),
+                "automation-list" => ListAutomations(profiles, options.Target, options.JsonOutput),
+                "automation-validate" => ValidateAutomations(profiles, options.Target, options.JsonOutput),
+                "status" => await ShowStatusAsync(profiles, paths, options).ConfigureAwait(false),
                 "connect" or "run" => await RunOneAsync(profiles, repository, paths, options).ConfigureAwait(false),
                 "run-address" => await RunAddressAsync(profiles, repository, paths, options).ConfigureAwait(false),
                 "connect-all" => await RunManyAsync(profiles, repository, paths, options, null).ConfigureAwait(false),
@@ -242,6 +256,26 @@ internal static class CliApplication
         return OeXYZExitCode.Success;
     }
 
+    private static OeXYZExitCode ManageControlToken(
+        ApplicationPaths paths,
+        CliArguments options,
+        bool create)
+    {
+        string target = Path.GetFullPath(options.ControlTokenFile ?? options.Target ?? paths.ControlToken);
+        if (create)
+        {
+            ControlTokenFile.Create(target);
+            WriteOutput($"Created a private 256-bit control token at {target}. Its value was not displayed.");
+        }
+        else
+        {
+            byte[] token = ControlTokenFile.Read(target);
+            CryptographicOperations.ZeroMemory(token);
+            WriteOutput($"The control-token file at {target} is valid and private.");
+        }
+        return OeXYZExitCode.Success;
+    }
+
     private static OeXYZExitCode ImportProfiles(
         ProfileDocument profiles,
         ProfileRepository repository,
@@ -316,7 +350,10 @@ internal static class CliApplication
             Address = address,
             CustomPort = options.Port,
             Version = version,
-            Group = group
+            Group = group,
+            ProxyProfileId = string.IsNullOrWhiteSpace(options.Proxy)
+                ? null
+                : FindProxy(profiles, options.Proxy).Id
         };
         _ = repository.Update(current =>
         {
@@ -383,12 +420,22 @@ internal static class CliApplication
     private static string ValidateProfileName(string? value, string kind) =>
         ProfileRules.NormalizeProfileName(value, kind);
 
-    private static async Task<OeXYZExitCode> ShowStatusAsync(ProfileDocument profiles, CliArguments options)
+    private static async Task<OeXYZExitCode> ShowStatusAsync(
+        ProfileDocument profiles,
+        ApplicationPaths paths,
+        CliArguments options)
     {
         ServerProfile server = FindServer(profiles, options.Target);
+        AccountSecretProvider? secretProvider = OperatingSystem.IsWindows()
+            ? null
+            : CreateAccountSecretProvider(paths.ProtectedAccounts, options.AccountKeyFile);
+        IConnectionDialer? dialer = null;
         try
         {
-            MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(server.Address, server.CustomPort)
+            dialer = await CreateConnectionDialerAsync(
+                profiles, server, paths, secretProvider, CancellationToken.None).ConfigureAwait(false);
+            MinecraftServerStatus status = await MinecraftServerDiscovery.QueryAsync(
+                    server.Address, server.CustomPort, dialer: dialer)
                 .ConfigureAwait(false);
             if (options.JsonOutput)
             {
@@ -416,6 +463,10 @@ internal static class CliApplication
         {
             await ErrorAsync(SensitiveDataRedactor.RedactText(exception.Message)).ConfigureAwait(false);
             return OeXYZExitCode.ConnectionFailure;
+        }
+        finally
+        {
+            if (dialer is IDisposable disposable) disposable.Dispose();
         }
     }
 
@@ -445,6 +496,8 @@ internal static class CliApplication
             version,
             server,
             options.AccountKeyFile,
+            options.ControlTokenFile,
+            options.AllowRemoteControl,
             configurationError: configurationError).ConfigureAwait(false);
         if (options.JsonOutput)
         {
@@ -631,6 +684,7 @@ internal static class CliApplication
             ? null
             : CreateAccountSecretProvider(paths.ProtectedAccounts, options.AccountKeyFile);
         SessionRuntimeRegistry runtime = new();
+        await using SessionControlManager controls = new();
         TerminalDashboard? dashboard = options.Dashboard
             ? new TerminalDashboard(runtime, acceptsInput: !options.NoInput)
             : null;
@@ -663,6 +717,7 @@ internal static class CliApplication
         }
         await using CliLog log = new(options.LogFile, options.LogLevel, WriteError);
         List<ConsoleSession> sessions = [];
+        List<IDisposable> connectionDialers = [];
         LoopbackHealthServer? healthServer = null;
         SystemdNotifier? systemd = null;
         Task? logRetentionTask = null;
@@ -685,12 +740,18 @@ internal static class CliApplication
 
             foreach ((AccountProfile account, ServerProfile server) in requested)
             {
+                IConnectionDialer sessionDialer = await CreateConnectionDialerAsync(
+                    profiles, server, paths, secretProvider, lifetime.Token).ConfigureAwait(false);
+                if (sessionDialer is IDisposable disposableDialer) connectionDialers.Add(disposableDialer);
                 ConsoleSession session = new(account, server, authentication,
-                    () => PersistAccountIdentifier(repository, account), paths.Logs, options.InspectPackets);
+                    () => PersistAccountIdentifier(repository, account), paths.Logs, options.InspectPackets,
+                    sessionDialer);
                 string prefix = requested.Count == 1 ? string.Empty : $"[{account.DisplayName} @ {server.DisplayName}] ";
                 session.LineAdded += line => WriteLine(log, prefix, line, dashboard);
                 session.PacketTraced += trace => WriteTrace(log, prefix, trace, dashboard);
-                session.Start();
+                string sessionId = controls.Register(session);
+                SessionControlResult started = await controls.StartAsync(sessionId, lifetime.Token).ConfigureAwait(false);
+                if (!started.Success) throw new InvalidOperationException(started.Message);
                 runtime.Register(session);
                 sessions.Add(session);
             }
@@ -700,9 +761,26 @@ internal static class CliApplication
 
             if (options.HealthPort > 0)
             {
-                healthServer = new LoopbackHealthServer(runtime, options.HealthPort);
+                string controlTokenPath = Path.GetFullPath(options.ControlTokenFile ?? paths.ControlToken);
+                byte[]? controlToken = File.Exists(controlTokenPath) ? ControlTokenFile.Read(controlTokenPath) : null;
+                if (options.AllowRemoteControl && controlToken is null)
+                    throw new InvalidOperationException("--allow-remote-control requires a private control-token file.");
+                try
+                {
+                    healthServer = new LoopbackHealthServer(
+                        runtime,
+                        options.HealthPort,
+                        controls,
+                        controlToken,
+                        options.AllowRemoteControl);
+                }
+                finally
+                {
+                    if (controlToken is not null) CryptographicOperations.ZeroMemory(controlToken);
+                }
                 await healthServer.StartAsync(lifetime.Token).ConfigureAwait(false);
-                string healthMessage = $"OeXYZ health endpoint: http://127.0.0.1:{healthServer.Port}/health";
+                string bindHost = options.AllowRemoteControl ? "0.0.0.0" : "127.0.0.1";
+                string healthMessage = $"OeXYZ management endpoint: http://{bindHost}:{healthServer.Port}/health";
                 if (dashboard is null) WriteOutput(healthMessage);
                 else dashboard.AddEvent(healthMessage);
                 log.Write("information", healthMessage);
@@ -754,8 +832,293 @@ internal static class CliApplication
             if (dashboard is not null) await dashboard.DisposeAsync().ConfigureAwait(false);
             if (healthServer is not null) await healthServer.DisposeAsync().ConfigureAwait(false);
             foreach (ConsoleSession session in sessions) await session.DisposeAsync().ConfigureAwait(false);
+            foreach (IDisposable connectionDialer in connectionDialers) connectionDialer.Dispose();
             terminateSignal?.Dispose();
             Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static OeXYZExitCode AddProxy(
+        ProfileDocument profiles,
+        ProfileRepository repository,
+        CliArguments options)
+    {
+        string name = ValidateProfileName(options.Target, "proxy");
+        ProxyKind kind = options.ProxyKind switch
+        {
+            "direct" => ProxyKind.Direct,
+            "socks5" => ProxyKind.Socks5,
+            "http-connect" => ProxyKind.HttpConnect,
+            _ => throw new ArgumentException("proxy-add requires --proxy-kind direct, socks5, or http-connect.")
+        };
+        if (profiles.ProxyProfiles.Any(proxy => string.Equals(proxy.DisplayName, name, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException($"A proxy profile named '{name}' already exists.");
+        ProxyProfile proxy = new()
+        {
+            DisplayName = name,
+            Kind = kind,
+            Host = kind == ProxyKind.Direct ? string.Empty : options.Address?.Trim() ?? string.Empty,
+            Port = kind == ProxyKind.Direct ? 0 : options.Port,
+            DnsMode = options.ProxyDns ? ProxyDnsMode.Proxy : ProxyDnsMode.Local
+        };
+        profiles.ProxyProfiles.Add(proxy);
+        repository.Save(profiles);
+        WriteOutput($"Added proxy profile '{name}' ({kind}); no credentials were stored.");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode ListProxies(ProfileDocument profiles, bool json)
+    {
+        var safe = profiles.ProxyProfiles.Select(proxy => new
+        {
+            id = proxy.Id,
+            proxy.DisplayName,
+            kind = proxy.Kind.ToString(),
+            proxy.Host,
+            proxy.Port,
+            dns = proxy.DnsMode.ToString(),
+            hasCredentials = proxy.SecretReference is not null
+        }).ToArray();
+        if (json) Console.WriteLine(JsonSerializer.Serialize(safe, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        { WriteIndented = true }));
+        else foreach (var proxy in safe) WriteOutput($"{proxy.DisplayName} | {proxy.kind} | {proxy.Host}:{proxy.Port} | credentials: {proxy.hasCredentials}");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode ListFailoverEndpoints(
+        ProfileDocument profiles,
+        string? target,
+        bool json)
+    {
+        ServerProfile server = FindServer(profiles, target);
+        var endpoints = server.Endpoints.Select(endpoint => new
+        {
+            id = endpoint.Id,
+            endpoint.Address,
+            port = endpoint.CustomPort,
+            endpoint.Priority,
+            endpoint.FailureThreshold,
+            endpoint.CooldownSeconds
+        }).ToArray();
+        if (json)
+            WriteOutputBlock(JsonSerializer.Serialize(endpoints,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        else
+            foreach (var endpoint in endpoints)
+                WriteOutput($"{endpoint.id} | {endpoint.Address}:{(endpoint.port > 0 ? endpoint.port : 25565)} | " +
+                            $"priority {endpoint.Priority} | failure threshold {endpoint.FailureThreshold} | " +
+                            $"cooldown {endpoint.CooldownSeconds}s");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode AddFailoverEndpoint(
+        ProfileDocument profiles,
+        ProfileRepository repository,
+        CliArguments options)
+    {
+        _ = FindServer(profiles, options.Target);
+        if (string.IsNullOrWhiteSpace(options.Address))
+            throw new ArgumentException("failover-add requires --address <host[:port]>.");
+        ServerAddress address = ParseServerAddressArgument(options.Address.Trim(), options.Port);
+        _ = repository.Update(current =>
+        {
+            ServerProfile server = FindServer(current, options.Target);
+            if (server.Endpoints.Count >= 8)
+                throw new InvalidDataException("A server profile may contain at most 8 endpoints.");
+            int customPort = options.Port > 0 || address.HasExplicitPort ? address.Port : 0;
+            if (server.Endpoints.Any(endpoint =>
+                    string.Equals(endpoint.Address, address.HandshakeHost, StringComparison.OrdinalIgnoreCase) &&
+                    endpoint.CustomPort == customPort))
+                throw new InvalidDataException("That failover endpoint already exists.");
+            int priority = server.Endpoints.Count == 0 ? 0 : server.Endpoints.Max(endpoint => endpoint.Priority) + 1;
+            server.Endpoints.Add(new ServerEndpointProfile
+            {
+                Address = address.HandshakeHost,
+                CustomPort = customPort,
+                Priority = Math.Min(priority, 1000)
+            });
+            return current;
+        });
+        WriteOutput($"Added failover endpoint to '{options.Target}'.");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode DeleteFailoverEndpoint(
+        ProfileDocument profiles,
+        ProfileRepository repository,
+        CliArguments options)
+    {
+        _ = FindServer(profiles, options.Target);
+        if (string.IsNullOrWhiteSpace(options.Address))
+            throw new ArgumentException("failover-delete requires --address <host[:port]>.");
+        ServerAddress address = ParseServerAddressArgument(options.Address.Trim(), options.Port);
+        int customPort = options.Port > 0 || address.HasExplicitPort ? address.Port : 0;
+        _ = repository.Update(current =>
+        {
+            ServerProfile server = FindServer(current, options.Target);
+            int removed = server.Endpoints.RemoveAll(endpoint =>
+                string.Equals(endpoint.Address, address.HandshakeHost, StringComparison.OrdinalIgnoreCase) &&
+                endpoint.CustomPort == customPort);
+            if (removed == 0) throw new FileNotFoundException("The failover endpoint was not found.");
+            return current;
+        });
+        WriteOutput($"Deleted failover endpoint from '{options.Target}'.");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode ListAutomations(ProfileDocument profiles, string? target, bool json)
+    {
+        ServerProfile server = FindServer(profiles, target);
+        var rules = server.Automations.Select(rule => new
+        {
+            id = rule.Id,
+            rule.Name,
+            rule.Enabled,
+            trigger = rule.Trigger.ToString(),
+            rule.Pattern,
+            rule.UseRegex,
+            rule.CooldownSeconds,
+            rule.MaximumRunsPerHour,
+            actions = rule.Actions.Select(action => new { kind = action.Kind.ToString(), action.Value })
+        }).ToArray();
+        if (json)
+            WriteOutputBlock(JsonSerializer.Serialize(rules,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        else
+            foreach (var rule in rules)
+                WriteOutput($"{rule.id} | {rule.Name} | {(rule.Enabled ? "enabled" : "disabled")} | " +
+                            $"{rule.trigger} | {rule.actions.Count()} action(s)");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode ValidateAutomations(ProfileDocument profiles, string? target, bool json)
+    {
+        ServerProfile server = FindServer(profiles, target);
+        ServerProfile validated = new ProfileDocument
+        {
+            Servers = [server],
+            ProxyProfiles = profiles.ProxyProfiles.ToList()
+        }.Normalize().Servers.Single();
+        var result = new
+        {
+            valid = true,
+            rules = validated.Automations.Count,
+            enabled = validated.Automations.Count(rule => rule.Enabled)
+        };
+        if (json)
+            WriteOutputBlock(JsonSerializer.Serialize(result,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        else
+            WriteOutput($"Validated {result.rules} bounded automation rule(s); {result.enabled} enabled.");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode DeleteProxy(
+        ProfileDocument profiles,
+        ProfileRepository repository,
+        string? target)
+    {
+        ProxyProfile proxy = FindProxy(profiles, target);
+        if (profiles.Servers.Any(server => server.ProxyProfileId == proxy.Id))
+            throw new InvalidDataException("The proxy is still referenced by a server profile.");
+        profiles.ProxyProfiles.Remove(proxy);
+        repository.Save(profiles);
+        WriteOutput($"Deleted proxy profile '{proxy.DisplayName}'. Its protected secret, if any, must be cleared first.");
+        return OeXYZExitCode.Success;
+    }
+
+    private static async Task<OeXYZExitCode> SetProxyCredentialsAsync(
+        ProfileDocument profiles,
+        ProfileRepository repository,
+        ApplicationPaths paths,
+        CliArguments options,
+        bool clear)
+    {
+        ProxyProfile proxy = FindProxy(profiles, options.Target);
+        string reference = proxy.SecretReference ?? $"proxy.{proxy.Id:N}";
+        byte[]? master = null;
+        byte[]? password = null;
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                AccountSecretProvider provider = CreateAccountSecretProvider(paths.ProtectedAccounts, options.AccountKeyFile);
+                master = await provider(WriteError, CancellationToken.None).ConfigureAwait(false);
+            }
+            using LocalSecretStore store = new(paths.Secrets, master ?? []);
+            if (clear)
+            {
+                await store.DeleteAsync(reference).ConfigureAwait(false);
+                proxy = proxy with { SecretReference = null };
+            }
+            else
+            {
+                password = options.ControlTokenFile is not null
+                    ? await File.ReadAllBytesAsync(Path.GetFullPath(options.ControlTokenFile)).ConfigureAwait(false)
+                    : ReadSecretFromTerminal("Proxy password: ");
+                if (password.Length is < 1 or > 4096) throw new InvalidDataException("The proxy password length is invalid.");
+                await store.SetAsync(reference, password).ConfigureAwait(false);
+                proxy = proxy with
+                {
+                    Username = options.ProxyUsername?.Trim() ?? proxy.Username,
+                    SecretReference = reference
+                };
+            }
+            int index = profiles.ProxyProfiles.FindIndex(item => item.Id == proxy.Id);
+            profiles.ProxyProfiles[index] = proxy;
+            repository.Save(profiles);
+            WriteOutput(clear
+                ? $"Cleared protected credentials for proxy '{proxy.DisplayName}'."
+                : $"Stored protected credentials for proxy '{proxy.DisplayName}' without displaying the password.");
+            return OeXYZExitCode.Success;
+        }
+        finally
+        {
+            if (master is not null) CryptographicOperations.ZeroMemory(master);
+            if (password is not null) CryptographicOperations.ZeroMemory(password);
+        }
+    }
+
+    private static ProxyProfile FindProxy(ProfileDocument profiles, string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) throw new ArgumentException("A proxy profile name is required.");
+        return profiles.ProxyProfiles.SingleOrDefault(proxy =>
+                   string.Equals(proxy.DisplayName, target, StringComparison.OrdinalIgnoreCase))
+               ?? throw new FileNotFoundException($"Proxy profile '{target}' was not found.");
+    }
+
+    private static async Task<IConnectionDialer> CreateConnectionDialerAsync(
+        ProfileDocument profiles,
+        ServerProfile server,
+        ApplicationPaths paths,
+        AccountSecretProvider? secretProvider,
+        CancellationToken cancellationToken)
+    {
+        if (server.ProxyProfileId is not Guid proxyId) return DirectConnectionDialer.Instance;
+        ProxyProfile proxy = profiles.ProxyProfiles.Single(item => item.Id == proxyId);
+        if (proxy.Kind == ProxyKind.Direct) return DirectConnectionDialer.Instance;
+        byte[]? masterSecret = null;
+        byte[]? proxyPassword = null;
+        try
+        {
+            if (proxy.SecretReference is not null)
+            {
+                if (!OperatingSystem.IsWindows())
+                {
+                    if (secretProvider is null)
+                        throw new InvalidOperationException("Linux proxy credentials require an account/secret key file.");
+                    masterSecret = await secretProvider(WriteError, cancellationToken).ConfigureAwait(false);
+                }
+                using LocalSecretStore store = new(paths.Secrets, masterSecret ?? []);
+                proxyPassword = await store.GetAsync(proxy.SecretReference, cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidDataException($"Proxy profile '{proxy.DisplayName}' has no stored credentials.");
+            }
+            return new ProxyConnectionDialer(proxy, proxyPassword ?? []);
+        }
+        finally
+        {
+            if (masterSecret is not null) CryptographicOperations.ZeroMemory(masterSecret);
+            if (proxyPassword is not null) CryptographicOperations.ZeroMemory(proxyPassword);
         }
     }
 
@@ -1231,6 +1594,18 @@ internal static class CliApplication
               oexyz account-add-microsoft <profile-name> [--login-hint <email>]
               oexyz account-login <profile-name> [--account-key-file <path>]
               oexyz account-key-generate <path>
+              oexyz control-token-create [--file <path>]
+              oexyz control-token-check [--file <path>]
+              oexyz proxy-add <name> --proxy-kind <kind> --address <host> --port <port> [--proxy-dns]
+              oexyz proxy-list [--json]
+              oexyz proxy-set-credentials <name> [--proxy-username <name>] [--file <password-file>]
+              oexyz proxy-clear-credentials <name>
+              oexyz proxy-delete <name>
+              oexyz failover-list <server> [--json]
+              oexyz failover-add <server> --address <host[:port]>
+              oexyz failover-delete <server> --address <host[:port]>
+              oexyz automation-list <server> [--json]
+              oexyz automation-validate <server> [--json]
               oexyz server-add <profile-name> --address <host[:port]>
               oexyz install-path | uninstall-path
 
@@ -1246,6 +1621,12 @@ internal static class CliApplication
               --inspect-packets           Show safe packet metadata (no payload dumps)
               --account-key-file <path>   Unlock encrypted Microsoft sessions on Linux
               --health-port <port>        Loopback health/status endpoint for services
+              --control-token-file <path> Private token file for /v1 management actions
+              --allow-remote-control      Explicitly bind management beyond loopback (token required)
+              --proxy-kind <kind>         direct, socks5, or http-connect
+              --proxy <name>              Assign a proxy profile when adding a server
+              --proxy-dns                 Let the proxy resolve destination hostnames
+              --proxy-username <name>     Proxy username (password remains in the secret store)
               --dashboard                 Interactive terminal session dashboard
               --no-input                  Service mode; do not read stdin
               --max-sessions <1-128>      Resource safety limit (default: 16)

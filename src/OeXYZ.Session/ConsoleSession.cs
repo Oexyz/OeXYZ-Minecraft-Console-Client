@@ -71,6 +71,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     private readonly AccountProfile account;
     private readonly ServerProfile server;
     private readonly IIdentityProvider authentication;
+    private readonly IConnectionDialer dialer;
     private readonly Action profilesChanged;
     private readonly string logBasePath;
     private readonly Func<string, long, RotatingLogWriter> logWriterFactory;
@@ -87,12 +88,17 @@ public sealed class ConsoleSession : IAsyncDisposable
             FullMode = BoundedChannelFullMode.Wait
         });
     private readonly Task logTask;
+    private readonly SessionAutomationEngine automation;
     private readonly Queue<string> recentDiagnostics = new();
     private readonly Dictionary<string, long> unknownPacketStatistics = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, EndpointCircuitState> endpointCircuits = [];
+    private readonly Queue<(string Host, ushort Port, DateTimeOffset Timestamp)> transferHistory = new();
+    private ServerEndpointProfile? pendingTransfer;
     private int recentDiagnosticCharacters;
     private MinecraftConnection? connection;
     private MinecraftIdentity? identity;
     private Task? runTask;
+    private Task? automationTask;
     private string currentStatus = "STARTING";
     private SessionLineKind currentStatusKind = SessionLineKind.Information;
     private string? currentVersion;
@@ -118,7 +124,8 @@ public sealed class ConsoleSession : IAsyncDisposable
         IIdentityProvider authentication,
         Action profilesChanged,
         string logDirectory,
-        bool enablePacketInspection = false)
+        bool enablePacketInspection = false,
+        IConnectionDialer? dialer = null)
         : this(
             account,
             server,
@@ -126,7 +133,8 @@ public sealed class ConsoleSession : IAsyncDisposable
             profilesChanged,
             logDirectory,
             enablePacketInspection,
-            static (path, maximumBytes) => new RotatingLogWriter(path, maximumBytes))
+            static (path, maximumBytes) => new RotatingLogWriter(path, maximumBytes),
+            dialer)
     {
     }
 
@@ -137,12 +145,14 @@ public sealed class ConsoleSession : IAsyncDisposable
         Action profilesChanged,
         string logDirectory,
         bool enablePacketInspection,
-        Func<string, long, RotatingLogWriter> logWriterFactory)
+        Func<string, long, RotatingLogWriter> logWriterFactory,
+        IConnectionDialer? dialer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
         this.account = account ?? throw new ArgumentNullException(nameof(account));
         this.server = server ?? throw new ArgumentNullException(nameof(server));
         this.authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
+        this.dialer = dialer ?? DirectConnectionDialer.Instance;
         this.profilesChanged = profilesChanged ?? throw new ArgumentNullException(nameof(profilesChanged));
         this.logWriterFactory = logWriterFactory ?? throw new ArgumentNullException(nameof(logWriterFactory));
         PrivateFileSystem.EnsurePrivateDirectory(logDirectory);
@@ -153,6 +163,14 @@ public sealed class ConsoleSession : IAsyncDisposable
         LogPath = logBasePath;
         PacketInspectionEnabled = enablePacketInspection;
         logTask = WriteLogAsync();
+        automation = new SessionAutomationEngine(
+            server.Automations,
+            SendAsync,
+            RespawnAsync,
+            Stop,
+            () => connection?.Abort(new IOException("Automation requested a controlled reconnect.")),
+            message => Notify(SessionNotificationKind.Mention, "Automation", message),
+            AddInformation);
     }
 
     public event Action<SessionLine>? LineAdded;
@@ -200,6 +218,7 @@ public sealed class ConsoleSession : IAsyncDisposable
     public void Start()
     {
         if (runTask is not null) throw new InvalidOperationException("The session is already running.");
+        automationTask = automation.RunIntervalsAsync(lifetime.Token);
         runTask = RunAsync(lifetime.Token);
     }
 
@@ -258,6 +277,7 @@ public sealed class ConsoleSession : IAsyncDisposable
             {
                 Exception? failure = null;
                 DateTimeOffset? connectedAt = null;
+                ServerEndpointProfile? selectedEndpoint = null;
                 try
                 {
                     if (connectionAttempts > 0 && account.Kind == AccountKind.Microsoft)
@@ -265,8 +285,17 @@ public sealed class ConsoleSession : IAsyncDisposable
                     connectionAttempts++;
                     SetNextReconnect(null);
                     SetStatus("DISCOVERING SERVER", SessionLineKind.Information);
+                    selectedEndpoint = SelectEndpoint();
+                    if (endpointCircuits.TryGetValue(selectedEndpoint.Id, out EndpointCircuitState? selectedCircuit) &&
+                        selectedCircuit.OpenUntil > DateTimeOffset.UtcNow)
+                    {
+                        TimeSpan circuitDelay = selectedCircuit.OpenUntil - DateTimeOffset.UtcNow;
+                        SetStatus($"ENDPOINT COOLDOWN {Math.Ceiling(circuitDelay.TotalSeconds):0}s",
+                            SessionLineKind.Warning);
+                        await Task.Delay(circuitDelay, cancellationToken).ConfigureAwait(false);
+                    }
                     (ServerAddress endpoint, ProtocolDefinition protocol, int? statusPingMilliseconds) =
-                        await DiscoverAsync(cancellationToken).ConfigureAwait(false);
+                        await DiscoverAsync(selectedEndpoint, cancellationToken).ConfigureAwait(false);
                     SetProtocol(protocol);
                     Add(SessionLineKind.Information, SessionLineCategory.Connection,
                         endpoint.UsedSrv
@@ -277,18 +306,25 @@ public sealed class ConsoleSession : IAsyncDisposable
                         endpoint,
                         identity,
                         protocol,
-                        initialPingMilliseconds: statusPingMilliseconds);
+                        initialPingMilliseconds: statusPingMilliseconds,
+                        dialer: dialer);
                     connection = active;
                     Wire(active, cancellationToken);
                     SetStatus("CONNECTING", SessionLineKind.Information);
                     await active.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    endpointCircuits.Remove(selectedEndpoint.Id);
                     connectedAt = DateTimeOffset.UtcNow;
+                    bool wasReconnect = connectedBefore;
                     if (connectedBefore)
                     {
                         Interlocked.Increment(ref reconnectCount);
                         Notify(SessionNotificationKind.Reconnect, "Session reconnected", Title);
                     }
                     connectedBefore = true;
+                    Observe(automation.TriggerAsync(
+                        wasReconnect ? AutomationTriggerKind.Reconnected : AutomationTriggerKind.Connected,
+                        string.Empty,
+                        cancellationToken), "Automation connection trigger");
                     RecordConnectionEstablished();
                     Raise(ConnectedChanged, true);
                     SetStatus("CONNECTED", SessionLineKind.Success);
@@ -328,8 +364,19 @@ public sealed class ConsoleSession : IAsyncDisposable
 
                 if (cancellationToken.IsCancellationRequested) break;
                 failure ??= new IOException("The connection ended unexpectedly.");
+                if (failure is ServerTransferException transfer && server.AllowServerTransfer)
+                {
+                    failure = RegisterTransfer(transfer.Transfer)
+                        ? new IOException("Following the validated server transfer target.")
+                        : new InvalidDataException("The server transfer limit or loop policy rejected the target.");
+                }
                 RecordTerminalFailure(failure);
                 DisconnectDecision decision = DisconnectClassifier.Classify(failure);
+                Observe(automation.TriggerAsync(
+                    AutomationTriggerKind.Disconnected,
+                    FriendlyError(failure),
+                    cancellationToken), "Automation disconnect trigger");
+                if (selectedEndpoint is not null) RecordEndpointResult(selectedEndpoint, decision.Category);
                 Add(decision.Category == DisconnectCategory.Permanent ? SessionLineKind.Error : SessionLineKind.Warning,
                     decision.Category == DisconnectCategory.Permanent ? SessionLineCategory.Error : SessionLineCategory.Connection,
                     FriendlyError(failure));
@@ -423,13 +470,16 @@ public sealed class ConsoleSession : IAsyncDisposable
     }
 
     private async Task<(ServerAddress Address, ProtocolDefinition Protocol, int? StatusPingMilliseconds)> DiscoverAsync(
+        ServerEndpointProfile selectedEndpoint,
         CancellationToken cancellationToken)
     {
         MinecraftServerStatus? status = null;
         try
         {
             status = await MinecraftServerDiscovery.QueryAsync(
-                server.Address, server.CustomPort, cancellationToken: cancellationToken).ConfigureAwait(false);
+                selectedEndpoint.Address, selectedEndpoint.CustomPort,
+                cancellationToken: cancellationToken, dialer: dialer)
+                .ConfigureAwait(false);
             Add(SessionLineKind.Information, SessionLineCategory.Connection,
                 $"Server reports {status.VersionName}, protocol {status.ProtocolVersion}, " +
                 $"players {status.PlayersOnline}/{status.PlayersMaximum}, status ping {status.PingMilliseconds} ms.");
@@ -444,14 +494,75 @@ public sealed class ConsoleSession : IAsyncDisposable
             ? catalog.Resolve(status?.ProtocolVersion ?? throw new IOException(
                 "Automatic version detection failed. Select a version manually or verify that the server is online."))
             : catalog.Resolve(server.Version);
-        ServerAddress endpoint = status?.Address ?? await ServerAddress.Parse(server.Address, server.CustomPort)
+        ServerAddress endpoint = status?.Address ?? await ServerAddress.Parse(
+                selectedEndpoint.Address, selectedEndpoint.CustomPort)
             .ResolveSrvAsync(cancellationToken).ConfigureAwait(false);
         return (endpoint, protocol, status?.PingMilliseconds);
     }
 
+    private ServerEndpointProfile SelectEndpoint()
+    {
+        if (pendingTransfer is not null)
+        {
+            ServerEndpointProfile selectedTransfer = pendingTransfer;
+            pendingTransfer = null;
+            return selectedTransfer;
+        }
+        IReadOnlyList<ServerEndpointProfile> endpoints = server.Endpoints.Count > 0
+            ? server.Endpoints
+            : [new ServerEndpointProfile { Address = server.Address, CustomPort = server.CustomPort }];
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ServerEndpointProfile? selected = endpoints
+            .OrderBy(endpoint => endpoint.Priority)
+            .FirstOrDefault(endpoint => !endpointCircuits.TryGetValue(endpoint.Id, out EndpointCircuitState? circuit) ||
+                                        circuit.OpenUntil <= now);
+        return selected ?? endpoints.OrderBy(endpoint =>
+            endpointCircuits.TryGetValue(endpoint.Id, out EndpointCircuitState? circuit)
+                ? circuit.OpenUntil
+                : DateTimeOffset.MinValue).First();
+    }
+
+    private void RecordEndpointResult(ServerEndpointProfile endpoint, DisconnectCategory category)
+    {
+        if (category != DisconnectCategory.Transient)
+        {
+            if (category == DisconnectCategory.User) endpointCircuits.Remove(endpoint.Id);
+            return;
+        }
+        EndpointCircuitState previous = endpointCircuits.GetValueOrDefault(endpoint.Id) ?? new EndpointCircuitState();
+        int failures = previous.Failures + 1;
+        DateTimeOffset openUntil = failures >= endpoint.FailureThreshold
+            ? DateTimeOffset.UtcNow.AddSeconds(endpoint.CooldownSeconds)
+            : previous.OpenUntil;
+        endpointCircuits[endpoint.Id] = new EndpointCircuitState(failures, openUntil);
+    }
+
+    private bool RegisterTransfer(ServerTransferRequest transfer)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        while (transferHistory.Count > 0 && now - transferHistory.Peek().Timestamp > TimeSpan.FromMinutes(10))
+            transferHistory.Dequeue();
+        if (transferHistory.Count >= 3 || transferHistory.Any(item =>
+                string.Equals(item.Host, transfer.Host, StringComparison.OrdinalIgnoreCase) && item.Port == transfer.Port))
+            return false;
+        transferHistory.Enqueue((transfer.Host, transfer.Port, now));
+        pendingTransfer = new ServerEndpointProfile
+        {
+            Address = transfer.Host,
+            CustomPort = transfer.Port,
+            Priority = -1,
+            FailureThreshold = 1,
+            CooldownSeconds = 60
+        };
+        return true;
+    }
+
+    private sealed record EndpointCircuitState(int Failures = 0, DateTimeOffset OpenUntil = default);
+
     private void Wire(MinecraftConnection active, CancellationToken cancellationToken)
     {
         active.PacketInspectionEnabled = PacketInspectionEnabled;
+        active.AllowServerTransfer = server.AllowServerTransfer;
         active.CodeOfConductApproval = CodeOfConductApproval;
         active.UnknownPacketObserved += RecordUnknownPacket;
         active.Log += AddInformation;
@@ -480,8 +591,15 @@ public sealed class ConsoleSession : IAsyncDisposable
         };
         active.PlayerListChanged += currentPlayers =>
         {
-            lock (stateLock) players = currentPlayers.ToArray();
+            IReadOnlyList<PlayerListEntry> previousPlayers;
+            PlayerListEntry[] nextPlayers = currentPlayers.ToArray();
+            lock (stateLock)
+            {
+                previousPlayers = players;
+                players = nextPlayers;
+            }
             PublishSnapshot();
+            TriggerPlayerListAutomations(previousPlayers, nextPlayers, lifetime.Token);
         };
         if (PacketInspectionEnabled) active.PacketTraced += trace =>
         {
@@ -533,22 +651,40 @@ public sealed class ConsoleSession : IAsyncDisposable
             line.Text,
             line.Formatting);
         if (published is null) return;
+        if (line.IsActionBar) return;
+        Observe(automation.TriggerAsync(AutomationTriggerKind.ChatContains, published.Text, lifetime.Token),
+            "Automation chat trigger");
         string text = published.Text;
         string ownName = identity?.Username ?? account.LoginHint;
         if (string.IsNullOrWhiteSpace(ownName)) return;
         string lower = text.ToLowerInvariant();
-        bool privateMessage = lower.Contains("whispers", StringComparison.Ordinal) ||
-                              lower.Contains("[pm]", StringComparison.Ordinal) ||
-                              lower.Contains("[msg]", StringComparison.Ordinal) ||
-                              lower.Contains("-> you", StringComparison.Ordinal);
+        bool privateMessage = line.IsPrivateMessage ||
+                              (line.TranslationKey is null &&
+                               (lower.Contains("whispers", StringComparison.Ordinal) ||
+                                lower.Contains("[pm]", StringComparison.Ordinal) ||
+                                lower.Contains("[msg]", StringComparison.Ordinal) ||
+                                lower.Contains("-> you", StringComparison.Ordinal))) ||
+                              server.PrivateMessagePatterns.Any(pattern =>
+                                  text.Contains(pattern, StringComparison.OrdinalIgnoreCase));
         if (privateMessage)
+        {
+            Observe(automation.TriggerAsync(AutomationTriggerKind.PrivateMessage, text, lifetime.Token),
+                "Automation private-message trigger");
             Notify(SessionNotificationKind.PrivateMessage, $"Private message · {server.DisplayName}", text);
-        else if (text.Contains(ownName, StringComparison.OrdinalIgnoreCase))
+        }
+        else if (ContainsWholeWord(text, ownName) || server.MentionPatterns.Any(pattern =>
+                     text.Contains(pattern, StringComparison.OrdinalIgnoreCase)))
+        {
+            Observe(automation.TriggerAsync(AutomationTriggerKind.Mention, text, lifetime.Token),
+                "Automation mention trigger");
             Notify(SessionNotificationKind.Mention, $"Mention · {server.DisplayName}", text);
+        }
     }
 
     private void OnDeath(MinecraftConnection active, CancellationToken cancellationToken)
     {
+        Observe(automation.TriggerAsync(AutomationTriggerKind.Death, string.Empty, cancellationToken),
+            "Automation death trigger");
         if (Interlocked.Exchange(ref dead, 1) != 0) return;
         SetStatus("DEAD", SessionLineKind.Warning);
         Add(SessionLineKind.Warning, SessionLineCategory.System, "The player died.");
@@ -784,6 +920,20 @@ public sealed class ConsoleSession : IAsyncDisposable
         lock (unknownPacketsLock) return unknownPacketStatistics.GetValueOrDefault("overflow");
     }
 
+    private static bool ContainsWholeWord(string text, string value)
+    {
+        int start = 0;
+        while ((start = text.IndexOf(value, start, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            int end = start + value.Length;
+            bool left = start == 0 || !(char.IsLetterOrDigit(text[start - 1]) || text[start - 1] == '_');
+            bool right = end == text.Length || !(char.IsLetterOrDigit(text[end]) || text[end] == '_');
+            if (left && right) return true;
+            start = end;
+        }
+        return false;
+    }
+
     private void Raise(Action? handlers)
     {
         if (handlers is null) return;
@@ -792,6 +942,49 @@ public sealed class ConsoleSession : IAsyncDisposable
             try { ((Action)subscriber)(); }
             catch { Interlocked.Increment(ref subscriberFailures); }
         }
+    }
+
+    private void TriggerPlayerListAutomations(
+        IReadOnlyList<PlayerListEntry> previous,
+        IReadOnlyList<PlayerListEntry> current,
+        CancellationToken cancellationToken)
+    {
+        (IReadOnlyList<PlayerListEntry> joined, IReadOnlyList<PlayerListEntry> left) =
+            FindPlayerListChanges(previous, current, identity?.PlayerUuid);
+        foreach (PlayerListEntry player in joined)
+            Observe(automation.TriggerAsync(
+                AutomationTriggerKind.PlayerJoined,
+                player.Name,
+                cancellationToken), "Automation player-joined trigger");
+        foreach (PlayerListEntry player in left)
+            Observe(automation.TriggerAsync(
+                AutomationTriggerKind.PlayerLeft,
+                player.Name,
+                cancellationToken), "Automation player-left trigger");
+    }
+
+    internal static (IReadOnlyList<PlayerListEntry> Joined, IReadOnlyList<PlayerListEntry> Left)
+        FindPlayerListChanges(
+            IReadOnlyList<PlayerListEntry> previous,
+            IReadOnlyList<PlayerListEntry> current,
+            Guid? ownUuid)
+    {
+        const int maximumChangesPerUpdate = 64;
+        Dictionary<Guid, PlayerListEntry> before = previous
+            .Where(player => player.Listed)
+            .GroupBy(player => player.Uuid)
+            .ToDictionary(group => group.Key, group => group.Last());
+        Dictionary<Guid, PlayerListEntry> after = current
+            .Where(player => player.Listed)
+            .GroupBy(player => player.Uuid)
+            .ToDictionary(group => group.Key, group => group.Last());
+        IEnumerable<PlayerListEntry> joined = after.Values
+            .Where(player => player.Uuid != ownUuid && !before.ContainsKey(player.Uuid));
+        IEnumerable<PlayerListEntry> left = before.Values
+            .Where(player => player.Uuid != ownUuid && !after.ContainsKey(player.Uuid));
+        return (
+            joined.OrderBy(player => player.Uuid).Take(maximumChangesPerUpdate).ToArray(),
+            left.OrderBy(player => player.Uuid).Take(maximumChangesPerUpdate).ToArray());
     }
 
     private void Raise<T>(Action<T>? handlers, T value)
@@ -836,7 +1029,13 @@ public sealed class ConsoleSession : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
         logLines.Writer.TryComplete();
+        if (automationTask is not null)
+        {
+            try { await automationTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
         await logTask.ConfigureAwait(false);
+        if (dialer is IDisposable disposableDialer) disposableDialer.Dispose();
         lifetime.Dispose();
     }
 }

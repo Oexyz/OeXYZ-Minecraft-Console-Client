@@ -120,6 +120,15 @@ so later service starts can authenticate silently without storing a password.
 - Profile backup recovery is always explicit. OeXYZ validates primary and
   backup independently, preserves a corrupt primary, restores atomically under
   the profile lock, and never treats an invalid backup as usable.
+- Management binds loopback by default. Remote bind is an explicit opt-in and
+  requires a private 256-bit file token; constant-time hash comparison is used,
+  and tokens never appear in status, metrics, logs, or support packages.
+- `secrets.bin` is separate from `accounts.bin`: DPAPI CurrentUser on Windows,
+  AES-256-GCM with the existing user-held key boundary on Linux. Proxy
+  passwords never appear in profile JSON, environment variables, or CLI args.
+- Automations cannot execute shells, programs, PowerShell/Bash, or arbitrary
+  HTTP. Cookies remain bounded in memory, and server transfers are disabled by
+  default with strict host/port and loop limits when enabled.
 - SHA-256 checks detect release corruption or mismatched assets but do not
   replace trust in the official GitHub repository and its owners. Release
   builds pin that repository and ignore repository overrides supplied through

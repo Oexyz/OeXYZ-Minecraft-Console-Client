@@ -20,7 +20,7 @@ public static class ChatTextCodec
             using JsonDocument document = JsonDocument.Parse(json);
             List<ChatRun> runs = [];
             AppendJson(document.RootElement, new ChatStyle(), runs);
-            return Build(runs);
+            return Build(runs, TranslationKeyFromElement(document.RootElement));
         }
         catch (JsonException)
         {
@@ -98,10 +98,7 @@ public static class ChatTextCodec
         try
         {
             using JsonDocument document = JsonDocument.Parse(json);
-            return document.RootElement.ValueKind == JsonValueKind.Object &&
-                   document.RootElement.TryGetProperty("translate", out JsonElement translate)
-                ? translate.GetString()
-                : null;
+            return TranslationKeyFromElement(document.RootElement);
         }
         catch (JsonException)
         {
@@ -127,8 +124,25 @@ public static class ChatTextCodec
         object? value = ReadPayload(ref reader, reader.ReadByte(), 0, budget);
         List<ChatRun> runs = [];
         AppendNbt(value, new ChatStyle(), runs);
-        return Build(runs);
+        return Build(runs, TranslationKeyFromNbt(value));
     }
+
+    public static bool IsPrivateMessageTranslationKey(string? key) =>
+        string.Equals(key, "commands.message.display.incoming", StringComparison.Ordinal) ||
+        string.Equals(key, "commands.message.display.incoming.narrate", StringComparison.Ordinal);
+
+    private static string? TranslationKeyFromElement(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Object &&
+        element.TryGetProperty("translate", out JsonElement translate) &&
+        translate.ValueKind == JsonValueKind.String
+            ? translate.GetString()
+            : null;
+
+    private static string? TranslationKeyFromNbt(object? value) =>
+        value is Dictionary<string, object?> compound &&
+        compound.TryGetValue("translate", out object? translate) && translate is string key
+            ? key
+            : null;
 
     private static string FlattenJson(JsonElement element)
     {
@@ -213,8 +227,8 @@ public static class ChatTextCodec
             runs.Add(new ChatRun(text, style));
     }
 
-    private static FormattedChatText Build(List<ChatRun> runs) =>
-        new(string.Concat(runs.Select(run => run.Text)), runs.ToArray());
+    private static FormattedChatText Build(List<ChatRun> runs, string? translationKey = null) =>
+        new(string.Concat(runs.Select(run => run.Text)), runs.ToArray(), translationKey);
 
     private static bool TryReadHexColor(string text, ref int index, out string? color)
     {

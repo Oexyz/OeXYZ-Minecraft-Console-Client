@@ -7,6 +7,9 @@ public sealed record ApplicationPaths(
     string Logs,
     string Diagnostics)
 {
+    public string ControlToken => Path.Combine(Root, "control.token");
+    public string Secrets => Path.Combine(Root, "secrets.bin");
+
     public static ApplicationPaths Resolve(string? explicitConfigPath = null)
     {
         string? configuredPath = string.IsNullOrWhiteSpace(explicitConfigPath)

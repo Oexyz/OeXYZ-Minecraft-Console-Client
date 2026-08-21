@@ -122,7 +122,7 @@ jobs:
             Copy-Item LICENSE,THIRD_PARTY_NOTICES.md,README.md -Destination $stage
             $docs = Join-Path $stage 'docs'
             New-Item -ItemType Directory -Path $docs -Force | Out-Null
-            Copy-Item docs/CLI.md,docs/ARCHITECTURE.md,docs/SECURITY_AND_PRIVACY.md,docs/UPDATER.md -Destination $docs
+            Copy-Item docs/CLI.md,docs/ARCHITECTURE.md,docs/SECURITY_AND_PRIVACY.md,docs/UPDATER.md,docs/MANAGEMENT_API.md -Destination $docs
             $name = "OeXYZ-Minecraft-Console-Client-v$version-$runtime.zip"
             Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $PWD "artifacts/$name") -CompressionLevel Optimal
           }
@@ -181,6 +181,7 @@ jobs:
             install -Dm644 docs/CLI.md "$stage/docs/CLI.md"
             install -Dm644 docs/ARCHITECTURE.md "$stage/docs/ARCHITECTURE.md"
             install -Dm644 docs/SECURITY_AND_PRIVACY.md "$stage/docs/SECURITY_AND_PRIVACY.md"
+            install -Dm644 docs/MANAGEMENT_API.md "$stage/docs/MANAGEMENT_API.md"
             install -Dm644 assets/systemd/oexyz.service "$stage/share/systemd/user/oexyz.service"
             archive="artifacts/OeXYZ-Minecraft-Console-Client-v$version-$runtime.tar.gz"
             tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -C "$stage" -cf - . | gzip -n > "$archive"

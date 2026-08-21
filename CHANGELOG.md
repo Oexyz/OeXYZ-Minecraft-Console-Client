@@ -5,6 +5,38 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-21
+
+### Added
+
+- A loopback-default management server with authenticated `/v1/sessions`
+  actions, constant-time 256-bit file-token verification, bounded HTTP parsing,
+  concurrency/rate limits, and Prometheus `/metrics` without PII labels.
+- A serialized `SessionControlManager` for stable opaque IDs and start, stop,
+  send, and respawn actions.
+- Declarative bounded automations for connection, chat, mention, private
+  message, death, player-list join/leave, and interval triggers; supported
+  actions contain no shell or arbitrary HTTP execution.
+- Direct, SOCKS5, and HTTP CONNECT dialers with optional authentication and
+  explicit local/proxy DNS behavior, shared by status and session connections.
+- A separate DPAPI/AES-256-GCM `secrets.bin` store for proxy credentials, with
+  atomic private files and no secret values in profiles or command output.
+- Priority/cooldown failover endpoints, configurable mention/PM patterns,
+  bounded in-memory protocol cookies, and opt-in validated server transfers.
+- Profile format 5 plus CLI token/proxy/failover/automation management and GUI
+  proxy, failover, automation-validation, and transfer controls.
+
+### Security
+
+- Management remains loopback-only unless `--allow-remote-control` is supplied;
+  remote binding requires a valid private token file and authenticates every
+  route. Responses use no-store, nosniff, bounded JSON, and no stack traces.
+- Proxy passwords are never accepted as ordinary command-line arguments,
+  logged, exported, or added to support packages. Portable profile export strips
+  usernames and secret references.
+- Cookies never persist, transfers default off and are loop/chain limited, and
+  automation commands reject login/register/password content.
+
 ## [1.4.0] - 2026-08-21
 
 ### Added

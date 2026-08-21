@@ -1,6 +1,6 @@
 namespace OeXYZ.Protocol;
 
-internal sealed record DecodedPlayerChat(Guid SenderUuid, string Text);
+internal sealed record DecodedPlayerChat(Guid SenderUuid, string Text, string? SenderName = null);
 
 internal static class PlayerChatDecoder
 {
@@ -24,7 +24,7 @@ internal static class PlayerChatDecoder
         string? sender = resolvePlayerName(decoded.SenderUuid);
         if (!string.IsNullOrWhiteSpace(sender) && !AlreadyContainsSender(decoded.Text, sender))
             decoded = decoded with { Text = $"<{sender}> {decoded.Text}" };
-        return decoded;
+        return decoded with { SenderName = sender };
     }
 
     private static DecodedPlayerChat? TryDecode(ReadOnlySpan<byte> payload, bool hasGlobalIndex)

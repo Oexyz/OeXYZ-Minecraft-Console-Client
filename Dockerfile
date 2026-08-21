@@ -5,7 +5,7 @@ ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0.10-noble-chiseled@s
 
 FROM --platform=$BUILDPLATFORM ${SDK_IMAGE} AS build
 ARG TARGETARCH
-ARG VERSION=1.4.0
+ARG VERSION=1.5.0
 WORKDIR /source
 COPY . .
 RUN case "$TARGETARCH" in \
@@ -22,7 +22,7 @@ RUN case "$TARGETARCH" in \
     && mkdir /empty-config /empty-state /empty-keys
 
 FROM ${RUNTIME_IMAGE} AS runtime
-ARG VERSION=1.4.0
+ARG VERSION=1.5.0
 ARG SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="OeXYZ Minecraft Console Client" \
       org.opencontainers.image.description="Lightweight headless Minecraft Java chat and AFK client" \

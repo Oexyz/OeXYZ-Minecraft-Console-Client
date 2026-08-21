@@ -237,6 +237,8 @@ await RunAsync("doctor, healthcheck and account-key generation bypass malformed 
     string validProfiles = Path.Combine(root, "valid-profiles.json");
     string recoveryProfiles = Path.Combine(root, "recovery-profiles.json");
     string key = Path.Combine(root, "account.key");
+    string controlToken = Path.Combine(root, "control.token");
+    string proxyPassword = Path.Combine(root, "proxy-password.txt");
     await File.WriteAllTextAsync(profiles, "{ malformed profile JSON");
     try
     {
@@ -258,6 +260,41 @@ await RunAsync("doctor, healthcheck and account-key generation bypass malformed 
         OeXYZExitCode invalidPort = await CliApplication.RunAsync(
             ["server-add", "BadPort", "--address", "example.org:0", "--config", validProfiles]);
         Equal(OeXYZExitCode.InvalidArguments, invalidPort);
+
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["control-token-create", "--file", controlToken, "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["control-token-check", "--file", controlToken, "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["proxy-add", "local-proxy", "--proxy-kind", "socks5", "--address", "127.0.0.1",
+                "--port", "1080", "--proxy-dns", "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["server-add", "proxied", "--address", "example.org", "--minecraft-version", "26.2",
+                "--proxy", "local-proxy", "--config", validProfiles]));
+        await File.WriteAllTextAsync(proxyPassword, "test-only-proxy-password");
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["proxy-set-credentials", "local-proxy", "--proxy-username", "user", "--file", proxyPassword,
+                "--account-key-file", key, "--config", validProfiles]));
+        ProfileDocument proxyDocument = new ProfileRepository(validProfiles).Load();
+        True(proxyDocument.ProxyProfiles.Single().SecretReference is not null,
+            "Proxy credentials were not represented by a protected secret reference.");
+        True(proxyDocument.Servers.Single().ProxyProfileId == proxyDocument.ProxyProfiles.Single().Id,
+            "Server profile did not retain its proxy reference.");
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["failover-add", "proxied", "--address", "backup.example.org:25566", "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["failover-list", "proxied", "--json", "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["automation-list", "proxied", "--json", "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["automation-validate", "proxied", "--json", "--config", validProfiles]));
+        True(new ProfileRepository(validProfiles).Load().Servers.Single().Endpoints.Any(endpoint =>
+                endpoint.Address == "backup.example.org" && endpoint.CustomPort == 25566),
+            "The CLI did not persist the failover endpoint.");
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["failover-delete", "proxied", "--address", "backup.example.org:25566", "--config", validProfiles]));
+        Equal(OeXYZExitCode.Success, await CliApplication.RunAsync(
+            ["proxy-clear-credentials", "local-proxy", "--account-key-file", key, "--config", validProfiles]));
 
         ProfileRepository recoveryRepository = new(recoveryProfiles);
         recoveryRepository.Save(new ProfileDocument());

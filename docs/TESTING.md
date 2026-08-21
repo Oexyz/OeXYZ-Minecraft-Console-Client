@@ -19,11 +19,11 @@ dotnet run --project tests/OeXYZ.Authentication.Tests -c Release
 dotnet run --project tests/OeXYZ.Cli.Tests -c Release
 ```
 
-Expected results: `PASS: 22 core tests`, `PASS: 20 protocol tests`, `PASS: 10
-updater tests` plus four GUI behavior tests, nine session checks, thirteen
-authentication checks, and eleven CLI checks: **89 deterministic .NET checks**
+Expected results: `PASS: 25 core tests`, `PASS: 29 protocol tests`, `PASS: 11
+updater tests` plus four GUI behavior tests, fourteen session checks, sixteen
+authentication checks, and eleven CLI checks: **110 deterministic .NET checks**
 total. The separate `tests/install-systemd.sh` regression adds **one shell
-installer test** (**90 checks overall**).
+installer test** (**111 checks overall**).
 
 The authentication suite specifically proves that the Minecraft Java public
 client ID is sent to the Microsoft Live device/token endpoints rather than the
@@ -370,6 +370,90 @@ republished, recopied, and SHA-256 matched locally/remotely. Those exact final
 hashes each completed an additional 65-second Play/Anti-AFK/SIGTERM smoke with
 exit 0; the recovery-only change did not alter the transport implementation
 covered by the 620-second run.
+
+## v1.5.0 local management, proxy and automation verification
+
+The final v1.5.0 x64 binary ran a real loopback management server over a live
+Vanilla 26.2 session. `/health`, `/ready`, `/status`, and Prometheus `/metrics`
+reported real values. `/v1/sessions` returned 401 without a token and succeeded
+with the freshly generated private token; the token was read only inside the
+remote shell and never printed. An authenticated `/send` delivered the harmless
+`management-hello` line to the controlled server.
+
+A dedicated local HTTP CONNECT proxy on `media-server` then carried both status
+and a 65-second Minecraft Play session; a separate SOCKS5 tunnel passed the
+same real status/Play/Anti-AFK path. The final native ARM64 binary completed
+its own 65-second Play/Anti-AFK/SIGTERM smoke with exit 0. A profile-format-5
+automation imported without secrets fired one Connected action exactly once,
+sent `automation-connected`, and logged only the redacted action summary.
+
+Deterministic real-TCP tests cover SOCKS5 and HTTP CONNECT with and without
+authentication, proxy DNS/domain handling, invalid responses, bounded cookies,
+disabled/enabled transfer validation, primary-to-secondary failover, protected
+secret-store round trips, management auth/body limits, Prometheus formatting,
+and automation cooldown/rate safety. No shell or arbitrary HTTP automation API
+exists.
+
+| Release | Host | Architecture | Mode | Server class | MC version | Protocol | Duration | Result |
+|---|---|---|---|---|---:|---:|---:|---|
+| 1.5.0 | `media-server` | linux-x64 | Offline via HTTP CONNECT | local Vanilla/proxy | 26.2 | 776 | 65 s | PASS |
+| 1.5.0 | `media-server` | linux-x64 | Offline via SOCKS5 | local Vanilla/proxy | 26.2 | 776 | 65 s | PASS |
+| 1.5.0 | `media-server` | linux-x64 | Offline + HTTP proxy/failover/management/automation soak | local Vanilla/proxy | 26.2 | 776 | 1,900 s | PASS |
+| 1.5.0 | `arm` | linux-arm64 | Offline | local Vanilla server | 26.2 | 776 | 65 s | PASS |
+
+The combined soak ran from 03:05:33 through at least 03:37:05 (31 minutes 32
+seconds) under one supervisor PID. Primary port 29991 failed, the circuit moved
+to secondary 25586, the Connected automation executed exactly once, and the
+session remained in Play through 45-second Anti-AFK updates. The last full
+snapshot at 25:30 reported 39,274 RX packets, 0 drops/unknowns/rejections, 0.07%
+CPU and approximately 106.7 MiB RSS; growth had flattened to about 0.4 MiB over
+the preceding five minutes. The configured 1,900-second SIGTERM bound ended the
+process before the next poll.
+
+After four final hardening-only edits (proxy header termination, all-open
+circuit cooldown waiting, regex validation, and support counter fields), every
+runtime was republished. The final x64 SHA-256-matched binary repeated the full
+Primary-failure -> HTTP-CONNECT Secondary -> Connected-automation -> Play ->
+Anti-AFK path for 65 seconds and exited 0; the final ARM64 artifact hash also
+matched its remote copy.
+
+The deterministic management suite additionally rejects unknown short `/v1`
+paths without faulting the listener, duplicate `Content-Length`, unsupported
+`Transfer-Encoding`, oversized headers and bodies, and invalid JSON. Remote-bind
+mode now requires the bearer token even for health/status/metrics, while local
+authentication failures increment only an aggregate Prometheus counter. Protocol
+and session checks preserve translation keys, sender UUID/name and chat type,
+classify incoming private messages structurally, and feed bounded player-list
+join/leave changes into automation rules. CLI regressions cover failover
+add/list/delete and automation list/validation; the GUI validates the same
+bounded automation JSON before saving.
+
+The post-audit artifacts were rebuilt after those changes and transferred
+again. `linux-x64` SHA-256
+`dcfa2afeb7f359b5227d969614b2ea17becada46751d53e48459e4060432562a`
+and native `linux-arm64` SHA-256
+`60034e8edcb78a1458000836a5d7b7839d3e81f120e2cf3a64cca9fc2a489ddf`
+matched locally and remotely. The final x64 hash passed status and Play through
+authenticated HTTP CONNECT with proxy DNS plus status through authenticated
+SOCKS5 with local DNS. The preceding binary additionally completed SOCKS5 Play;
+the only later code edit tightened automation/Doctor policy and did not touch
+proxy or session transport. Generated test passwords stayed in private `0600`
+files and were never printed. ARM64 repeated
+status and Play natively with the final hash. The final Windows
+x64 Single-File CLI independently reached Play on the official local Vanilla
+26.2 server, sent and received a harmless chat line, answered keepalive, and
+exited cleanly. Post-test x64/ARM64 log scans again found no secret patterns.
+
+The hash-matched final x64 binary also passed an isolated v1.5 systemd user
+unit: `Type=notify`, 30-second watchdog for 72 seconds with zero restarts,
+proxy/failover Play, management health/ready/metrics, and clean stop with
+`Result=success`/exit 0. Only the test unit was removed afterward.
+
+Docker remained unavailable because the local daemon was stopped and the SSH
+user had no socket permission or passwordless sudo. No stored premium account
+existed, so premium refresh remained blocked without starting interactive
+authentication. Targeted v1.5 log scans found no bearer/access/refresh/XSTS/
+password/control-token/proxy-password/account-key/device-code patterns.
 
 ## Manual release smoke test
 

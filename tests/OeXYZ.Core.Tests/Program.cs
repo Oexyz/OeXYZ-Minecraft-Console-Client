@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using OeXYZ.Core;
 
@@ -144,6 +145,92 @@ Run("profile repository creates a migration backup", () =>
     }
 });
 
+Run("profile v5 normalizes proxy failover automation and transfer policy", () =>
+{
+    ProxyProfile proxy = new()
+    {
+        DisplayName = "Local SOCKS",
+        Kind = ProxyKind.Socks5,
+        Host = "127.0.0.1",
+        Port = 1080,
+        SecretReference = "proxy.local"
+    };
+    ServerProfile server = new()
+    {
+        DisplayName = "Advanced",
+        Address = "primary.example",
+        ProxyProfileId = proxy.Id,
+        AllowServerTransfer = true,
+        Endpoints =
+        [
+            new ServerEndpointProfile { Address = "primary.example", Priority = 0 },
+            new ServerEndpointProfile { Address = "secondary.example", Priority = 1 }
+        ],
+        Automations =
+        [
+            new AutomationRuleProfile
+            {
+                Name = "Welcome",
+                Trigger = AutomationTriggerKind.Connected,
+                CooldownSeconds = 1,
+                Actions = [new AutomationActionProfile { Kind = AutomationActionKind.SendChat, Value = "hello" }]
+            }
+        ]
+    };
+    ProfileDocument document = new ProfileDocument
+    {
+        FormatVersion = 4,
+        ProxyProfiles = [proxy],
+        Servers = [server]
+    }.Normalize();
+    Equal(5, document.FormatVersion);
+    Equal(2, document.Servers[0].Endpoints.Count);
+    True(document.Servers[0].AllowServerTransfer, "Transfer policy was not preserved.");
+    Equal(1, document.Servers[0].Automations.Count);
+    Throws<InvalidDataException>(() => (document with
+    {
+        Servers = [server with { ProxyProfileId = Guid.NewGuid() }]
+    }).Normalize());
+    Throws<InvalidDataException>(() => (document with
+    {
+        Servers = [server with
+        {
+            Automations = [server.Automations[0] with
+            {
+                Actions = [new AutomationActionProfile { Kind = AutomationActionKind.SendCommand, Value = "/login secret" }]
+            }]
+        }]
+    }).Normalize());
+    Throws<InvalidDataException>(() => (document with
+    {
+        Servers = [server with
+        {
+            Automations = [server.Automations[0] with { UseRegex = true, Pattern = "(" }]
+        }]
+    }).Normalize());
+    Throws<InvalidDataException>(() => (document with
+    {
+        Servers = [server with
+        {
+            Automations = [server.Automations[0] with { Pattern = "password=must-not-be-stored" }]
+        }]
+    }).Normalize());
+    Throws<InvalidDataException>(() => (document with
+    {
+        Servers = [server with
+        {
+            Automations = [server.Automations[0] with
+            {
+                Actions = [new AutomationActionProfile
+                {
+                    Kind = AutomationActionKind.Notify,
+                    Value = "access_token=must-not-be-stored"
+                }]
+            }]
+        }]
+    }).Normalize());
+});
+
 Run("profile backup recovery is explicit atomic and preserves corrupt input", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), "oexyz-profile-recovery-tests", Guid.NewGuid().ToString("N"));
@@ -243,6 +330,25 @@ Run("private directories never chmod an existing caller-owned directory", () =>
         PrivateFileSystem.EnsurePrivateDirectory(owned);
         True(PrivateFileSystem.HasPrivateUnixPermissions(owned),
             "A directory created by OeXYZ did not receive private permissions.");
+    }
+    finally
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+});
+
+Run("control tokens are private 256-bit files and never printed", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), "oexyz-control-token-tests", Guid.NewGuid().ToString("N"));
+    string path = Path.Combine(root, "control.token");
+    try
+    {
+        ControlTokenFile.Create(path);
+        byte[] token = ControlTokenFile.Read(path);
+        try { Equal(ControlTokenFile.TokenBytes, token.Length); }
+        finally { CryptographicOperations.ZeroMemory(token); }
+        Throws<IOException>(() => ControlTokenFile.Create(path));
+        True(PrivateFileSystem.HasPrivateUnixPermissions(path), "The control token is not private.");
     }
     finally
     {

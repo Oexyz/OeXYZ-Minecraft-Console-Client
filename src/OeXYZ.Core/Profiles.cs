@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace OeXYZ.Core;
 
@@ -44,6 +45,12 @@ public sealed record ServerProfile
     public bool StartupCommandsEnabled { get; init; }
     public int StartupCommandDelayMilliseconds { get; init; } = 1000;
     public List<string> StartupCommands { get; init; } = [];
+    public Guid? ProxyProfileId { get; init; }
+    public List<ServerEndpointProfile> Endpoints { get; init; } = [];
+    public List<AutomationRuleProfile> Automations { get; init; } = [];
+    public bool AllowServerTransfer { get; init; }
+    public List<string> MentionPatterns { get; init; } = [];
+    public List<string> PrivateMessagePatterns { get; init; } = [];
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalData { get; init; }
 }
@@ -73,12 +80,13 @@ public sealed record SessionBookmark
 
 public sealed record ProfileDocument
 {
-    public const int CurrentFormatVersion = 4;
+    public const int CurrentFormatVersion = 5;
 
     public int FormatVersion { get; init; } = CurrentFormatVersion;
     public long Revision { get; set; }
     public List<AccountProfile> Accounts { get; init; } = [];
     public List<ServerProfile> Servers { get; init; } = [];
+    public List<ProxyProfile> ProxyProfiles { get; init; } = [];
     public ApplicationSettings Settings { get; init; } = new();
     public List<SessionBookmark> ManagedSessions { get; init; } = [];
     public List<SessionBookmark> LastSessions { get; init; } = [];
@@ -98,12 +106,20 @@ public sealed record ProfileDocument
         List<ServerProfile> servers = RequireItems(Servers, "servers")
             .Select(NormalizeServer)
             .ToList();
+        List<ProxyProfile> proxies = RequireItems(ProxyProfiles, "proxy profiles")
+            .Select(NormalizeProxy)
+            .ToList();
         EnsureUniqueProfiles(
             accounts.Select(account => (account.Id, account.DisplayName)),
             "account");
         EnsureUniqueProfiles(
             servers.Select(server => (server.Id, server.DisplayName)),
             "server");
+        EnsureUniqueProfiles(proxies.Select(proxy => (proxy.Id, proxy.DisplayName)), "proxy");
+        HashSet<Guid> proxyIds = proxies.Select(proxy => proxy.Id).ToHashSet();
+        foreach (ServerProfile server in servers)
+            if (server.ProxyProfileId is Guid proxyId && !proxyIds.Contains(proxyId))
+                throw new InvalidDataException($"Server profile '{server.DisplayName}' references a missing proxy.");
         HashSet<Guid> accountIds = accounts.Select(account => account.Id).ToHashSet();
         HashSet<Guid> serverIds = servers.Select(server => server.Id).ToHashSet();
         List<SessionBookmark> managedSessions = NormalizeSessions(ManagedSessions, accountIds, serverIds);
@@ -114,6 +130,7 @@ public sealed record ProfileDocument
             FormatVersion = CurrentFormatVersion,
             Accounts = accounts,
             Servers = servers,
+            ProxyProfiles = proxies,
             Settings = NormalizeSettings(Settings ?? new ApplicationSettings()),
             ManagedSessions = managedSessions,
             LastSessions = lastSessions
@@ -172,9 +189,101 @@ public sealed record ProfileDocument
             QuickCommands = SanitizeCommands(server.QuickCommands, 12),
             StartupCommands = SanitizeCommands(server.StartupCommands, 8)
                 .Where(command => !SensitiveDataRedactor.IsSensitiveCommand(command))
-                .ToList()
+                .ToList(),
+            Endpoints = NormalizeEndpoints(server),
+            Automations = NormalizeAutomations(server.Automations),
+            MentionPatterns = NormalizePatterns(server.MentionPatterns),
+            PrivateMessagePatterns = NormalizePatterns(server.PrivateMessagePatterns)
         };
     }
+
+    private static ProxyProfile NormalizeProxy(ProxyProfile proxy)
+    {
+        if (proxy.Id == Guid.Empty || !Enum.IsDefined(proxy.Kind) || !Enum.IsDefined(proxy.DnsMode))
+            throw new InvalidDataException("A proxy profile contains an invalid ID or kind.");
+        if (proxy.Kind != ProxyKind.Direct && (string.IsNullOrWhiteSpace(proxy.Host) || proxy.Port is < 1 or > 65535))
+            throw new InvalidDataException($"Proxy profile '{proxy.DisplayName}' has an invalid endpoint.");
+        return proxy with
+        {
+            DisplayName = ProfileRules.NormalizeProfileName(proxy.DisplayName, "proxy"),
+            Host = proxy.Host.Trim(),
+            Username = proxy.Username.Trim(),
+            SecretReference = string.IsNullOrWhiteSpace(proxy.SecretReference) ? null : proxy.SecretReference.Trim()
+        };
+    }
+
+    private static List<ServerEndpointProfile> NormalizeEndpoints(ServerProfile server)
+    {
+        List<ServerEndpointProfile> endpoints = RequireItems(server.Endpoints, "failover endpoints");
+        if (endpoints.Count == 0)
+            endpoints.Add(new ServerEndpointProfile { Address = server.Address, CustomPort = server.CustomPort });
+        if (endpoints.Count > 8) throw new InvalidDataException("A server profile may contain at most 8 endpoints.");
+        foreach (ServerEndpointProfile endpoint in endpoints)
+        {
+            if (endpoint.Id == Guid.Empty || string.IsNullOrWhiteSpace(endpoint.Address) ||
+                endpoint.CustomPort is < 0 or > 65535)
+                throw new InvalidDataException("A failover endpoint is invalid.");
+        }
+        return endpoints.Select(endpoint => endpoint with
+        {
+            Address = endpoint.Address.Trim(),
+            Priority = Math.Clamp(endpoint.Priority, 0, 1000),
+            FailureThreshold = Math.Clamp(endpoint.FailureThreshold, 1, 20),
+            CooldownSeconds = Math.Clamp(endpoint.CooldownSeconds, 10, 3600)
+        }).OrderBy(endpoint => endpoint.Priority).ToList();
+    }
+
+    private static List<AutomationRuleProfile> NormalizeAutomations(IEnumerable<AutomationRuleProfile>? source)
+    {
+        List<AutomationRuleProfile> rules = RequireItems(source, "automation rules");
+        if (rules.Count > 32) throw new InvalidDataException("A server profile may contain at most 32 automation rules.");
+        return rules.Select(rule =>
+        {
+            string pattern = rule.Pattern?.Trim() ?? string.Empty;
+            string name = ProfileRules.NormalizeProfileName(rule.Name, "automation rule");
+            if (rule.Id == Guid.Empty || !Enum.IsDefined(rule.Trigger) || pattern.Length > 256 ||
+                ContainsSensitiveAutomationText(name) || ContainsSensitiveAutomationText(pattern))
+                throw new InvalidDataException("An automation rule is invalid.");
+            if (rule.UseRegex)
+            {
+                try
+                {
+                    _ = new Regex(pattern, RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+                        TimeSpan.FromMilliseconds(100));
+                }
+                catch (ArgumentException exception)
+                {
+                    throw new InvalidDataException($"Automation rule '{rule.Name}' contains an invalid regex.", exception);
+                }
+            }
+            List<AutomationActionProfile> actions = RequireItems(rule.Actions, "automation actions");
+            if (actions.Count is < 1 or > 4 || actions.Any(action =>
+                    !Enum.IsDefined(action.Kind) || (action.Value?.Length ?? 0) > 256 ||
+                    SensitiveDataRedactor.IsSensitiveCommand(action.Value ?? string.Empty) ||
+                    ContainsSensitiveAutomationText(action.Value ?? string.Empty)))
+                throw new InvalidDataException($"Automation rule '{rule.Name}' contains an unsafe action.");
+            return rule with
+            {
+                Name = name,
+                Pattern = pattern,
+                CooldownSeconds = Math.Clamp(rule.CooldownSeconds,
+                    rule.Trigger is AutomationTriggerKind.ChatContains or AutomationTriggerKind.Mention or
+                        AutomationTriggerKind.PrivateMessage ? 5 : 1, 3600),
+                MaximumRunsPerHour = Math.Clamp(rule.MaximumRunsPerHour, 1, 1000),
+                Actions = actions.Select(action => action with { Value = action.Value?.Trim() ?? string.Empty }).ToList()
+            };
+        }).ToList();
+    }
+
+    private static bool ContainsSensitiveAutomationText(string value)
+    {
+        string redacted = SensitiveDataRedactor.RedactText(value);
+        return !string.Equals(value, redacted, StringComparison.Ordinal) &&
+               redacted.Contains("[REDACTED]", StringComparison.Ordinal);
+    }
+
+    private static List<string> NormalizePatterns(IEnumerable<string>? source) => RequireItems(source, "patterns")
+        .Select(value => value.Trim()).Where(value => value.Length is > 0 and <= 256).Take(8).ToList();
 
     private static ApplicationSettings NormalizeSettings(ApplicationSettings settings) => settings with
     {
