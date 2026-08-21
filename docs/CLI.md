@@ -28,6 +28,18 @@ oexyz healthcheck [http://127.0.0.1:8765/health]
 oexyz export-profiles <portable.json>
 oexyz import-profiles <portable.json>
 oexyz profiles-recover [--json]
+oexyz control-token-create [--file <path>]
+oexyz control-token-check [--file <path>]
+oexyz proxy-add <name> --proxy-kind <direct|socks5|http-connect> --address <host> --port <port>
+oexyz proxy-list [--json]
+oexyz proxy-set-credentials <name> [--proxy-username <name>] [--file <password-file>]
+oexyz proxy-clear-credentials <name>
+oexyz proxy-delete <name>
+oexyz failover-list <server> [--json]
+oexyz failover-add <server> --address <host[:port]>
+oexyz failover-delete <server> --address <host[:port]>
+oexyz automation-list <server> [--json]
+oexyz automation-validate <server> [--json]
 oexyz install-path
 oexyz uninstall-path
 ```
@@ -105,6 +117,8 @@ operating systems.
 | `--dashboard` | Show the live ANSI terminal dashboard |
 | `--no-input` | Disable stdin for a service/container |
 | `--health-port <port>` | Start loopback-only `/health`, `/ready`, and `/status` |
+| `--control-token-file <path>` | Enable authenticated `/v1` management actions with a private token file |
+| `--allow-remote-control` | Explicit remote bind; rejected unless a valid token file is present |
 | `--max-sessions <1-128>` | Bound concurrent sessions; default `16` |
 | `--json` | Machine-readable output where supported |
 
@@ -127,6 +141,19 @@ reports only recovery metadata, never profile or account contents.
 
 The dashboard and `/status` include aggregate dropped-event, dropped-log,
 subscriber-failure, outbound-rejection, and unknown-packet-overflow counters.
+
+With `--health-port`, v1.5 also serves Prometheus `/metrics`. When a valid
+control-token file exists it enables authenticated `/v1/sessions` GET and
+start/stop/send/respawn POST actions. Health/status/metrics remain local by
+default. Control tokens and proxy passwords are never printed. Proxy passwords
+come from hidden input or an explicit file, never a normal command-line value.
+If `--allow-remote-control` is explicitly enabled, every management route is
+bearer-authenticated, including `/health`, `/ready`, `/status`, and `/metrics`.
+
+`failover-add`, `failover-delete`, and `failover-list` edit the bounded endpoint
+set of an existing server profile. `automation-list` shows its declarative rules
+and `automation-validate` re-runs all limits, regex, action, and secret-command
+checks without executing a rule.
 
 ## PATH installation
 

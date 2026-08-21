@@ -54,6 +54,8 @@ internal static class AppPaths
     public static string ProtectedAccounts => Paths.ProtectedAccounts;
     public static string Logs => Paths.Logs;
     public static string Diagnostics => Paths.Diagnostics;
+    public static string Secrets => Paths.Secrets;
+    public static string ControlToken => Paths.ControlToken;
 }
 
 internal static class CrashReporter

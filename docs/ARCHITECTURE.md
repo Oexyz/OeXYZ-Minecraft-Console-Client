@@ -171,6 +171,26 @@ copies one binary into a pinned chiseled runtime-deps image. It runs as UID/GID
 volumes only at `/config`, `/state`, and `/keys`. The image contains no profile,
 token, password, or account key.
 
+## Local management, proxy, failover, and automation
+
+`SessionControlManager` serializes management actions over stable opaque
+account/server IDs. The hardened management listener keeps existing health
+routes, adds Prometheus metrics and token-authenticated `/v1` actions, and
+enforces bounded headers/bodies, timeouts, concurrency and write rate limits.
+
+Connection creation is abstracted behind `IConnectionDialer`. Direct, SOCKS5,
+and HTTP CONNECT implementations preserve the original handshake host while
+applying explicit local/proxy DNS policy. Proxy credentials live only in the
+separate `secrets.bin` DPAPI/AES-GCM boundary. Profile format 5 adds proxy
+references, up to eight failover endpoints, 32 bounded automation rules,
+configurable mention/PM patterns, and opt-in transfer policy.
+
+Automation supports only enumerated Minecraft/session/local-notification
+actions. It has per-rule cooldown/hour limits, a global action budget, bounded
+inputs, and non-backtracking timed regex. Cookies remain connection-memory-only;
+transfer chains are validated and limited before reconnect policy can follow
+them.
+
 ## Update trust boundary
 
 Update checks are explicit. The updater selects an asset matching the running

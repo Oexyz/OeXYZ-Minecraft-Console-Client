@@ -3306,7 +3306,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -3398,7 +3401,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -3490,7 +3496,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -3582,7 +3591,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -3674,7 +3686,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -3766,7 +3781,10 @@
           "player_info": 64,
           "player_remove": 63,
           "add_resource_pack": 75,
-          "remove_resource_pack": 74
+          "remove_resource_pack": 74,
+          "cookie_request": 22,
+          "store_cookie": 114,
+          "transfer": 122
         },
         "playServerbound": {
           "keep_alive": 26,
@@ -3858,7 +3876,10 @@
           "player_info": 64,
           "player_remove": 63,
           "add_resource_pack": 75,
-          "remove_resource_pack": 74
+          "remove_resource_pack": 74,
+          "cookie_request": 22,
+          "store_cookie": 114,
+          "transfer": 122
         },
         "playServerbound": {
           "keep_alive": 26,
@@ -3951,7 +3972,10 @@
           "player_info": 63,
           "player_remove": 62,
           "add_resource_pack": 74,
-          "remove_resource_pack": 73
+          "remove_resource_pack": 73,
+          "cookie_request": 21,
+          "store_cookie": 113,
+          "transfer": 122
         },
         "playServerbound": {
           "keep_alive": 26,
@@ -4044,7 +4068,10 @@
           "player_info": 63,
           "player_remove": 62,
           "add_resource_pack": 74,
-          "remove_resource_pack": 73
+          "remove_resource_pack": 73,
+          "cookie_request": 21,
+          "store_cookie": 113,
+          "transfer": 122
         },
         "playServerbound": {
           "keep_alive": 27,
@@ -4137,7 +4164,10 @@
           "player_info": 62,
           "player_remove": 61,
           "add_resource_pack": 70,
-          "remove_resource_pack": 69
+          "remove_resource_pack": 69,
+          "cookie_request": 22,
+          "store_cookie": 107,
+          "transfer": 115
         },
         "playServerbound": {
           "keep_alive": 24,
@@ -4229,7 +4259,10 @@
           "player_info": 63,
           "player_remove": 62,
           "add_resource_pack": 74,
-          "remove_resource_pack": 73
+          "remove_resource_pack": 73,
+          "cookie_request": 21,
+          "store_cookie": 113,
+          "transfer": 122
         },
         "playServerbound": {
           "keep_alive": 27,
@@ -4324,7 +4357,10 @@
           "player_info": 68,
           "player_remove": 67,
           "add_resource_pack": 79,
-          "remove_resource_pack": 78
+          "remove_resource_pack": 78,
+          "cookie_request": 21,
+          "store_cookie": 118,
+          "transfer": 127
         },
         "playServerbound": {
           "keep_alive": 27,
@@ -4419,7 +4455,10 @@
           "player_info": 68,
           "player_remove": 67,
           "add_resource_pack": 79,
-          "remove_resource_pack": 78
+          "remove_resource_pack": 78,
+          "cookie_request": 21,
+          "store_cookie": 118,
+          "transfer": 127
         },
         "playServerbound": {
           "keep_alive": 27,
@@ -4514,7 +4553,10 @@
           "player_info": 68,
           "player_remove": 67,
           "add_resource_pack": 79,
-          "remove_resource_pack": 78
+          "remove_resource_pack": 78,
+          "cookie_request": 21,
+          "store_cookie": 118,
+          "transfer": 127
         },
         "playServerbound": {
           "keep_alive": 27,
@@ -4609,7 +4651,10 @@
           "player_info": 70,
           "player_remove": 69,
           "add_resource_pack": 81,
-          "remove_resource_pack": 80
+          "remove_resource_pack": 80,
+          "cookie_request": 21,
+          "store_cookie": 120,
+          "transfer": 129
         },
         "playServerbound": {
           "keep_alive": 28,
@@ -4704,7 +4749,10 @@
           "player_info": 70,
           "player_remove": 69,
           "add_resource_pack": 81,
-          "remove_resource_pack": 80
+          "remove_resource_pack": 80,
+          "cookie_request": 21,
+          "store_cookie": 120,
+          "transfer": 129
         },
         "playServerbound": {
           "keep_alive": 28,
@@ -4799,7 +4847,10 @@
           "player_info": 70,
           "player_remove": 69,
           "add_resource_pack": 81,
-          "remove_resource_pack": 80
+          "remove_resource_pack": 80,
+          "cookie_request": 21,
+          "store_cookie": 120,
+          "transfer": 129
         },
         "playServerbound": {
           "keep_alive": 28,
@@ -4894,7 +4945,10 @@
           "player_info": 70,
           "player_remove": 69,
           "add_resource_pack": 81,
-          "remove_resource_pack": 80
+          "remove_resource_pack": 80,
+          "cookie_request": 21,
+          "store_cookie": 120,
+          "transfer": 129
         },
         "playServerbound": {
           "keep_alive": 28,

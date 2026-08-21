@@ -6,7 +6,8 @@ public sealed record ProfileImportResult(
     ProfileDocument Document,
     int AccountsAdded,
     int ServersAdded,
-    int DuplicatesSkipped);
+    int DuplicatesSkipped,
+    int ProxiesAdded = 0);
 
 public static class ProfileTransferService
 {
@@ -73,12 +74,18 @@ public static class ProfileTransferService
                 .ToList(),
             AdditionalData = null
         }).ToList();
+        List<ProxyProfile> proxies = normalized.ProxyProfiles.Select(proxy => proxy with
+        {
+            Username = string.Empty,
+            SecretReference = null
+        }).ToList();
         return new ProfileDocument
         {
             FormatVersion = ProfileDocument.CurrentFormatVersion,
             Revision = 0,
             Accounts = accounts,
             Servers = servers,
+            ProxyProfiles = proxies,
             Settings = normalized.Settings with { AdditionalData = null },
             ManagedSessions = normalized.ManagedSessions.ToList(),
             LastSessions = [],
@@ -90,12 +97,16 @@ public static class ProfileTransferService
     {
         List<AccountProfile> accounts = existing.Accounts.ToList();
         List<ServerProfile> servers = existing.Servers.ToList();
+        List<ProxyProfile> proxies = existing.ProxyProfiles.ToList();
         HashSet<Guid> usedAccountIds = accounts.Select(account => account.Id).ToHashSet();
         HashSet<Guid> usedServerIds = servers.Select(server => server.Id).ToHashSet();
+        HashSet<Guid> usedProxyIds = proxies.Select(proxy => proxy.Id).ToHashSet();
         Dictionary<Guid, Guid> accountIds = [];
         Dictionary<Guid, Guid> serverIds = [];
+        Dictionary<Guid, Guid> proxyIds = [];
         int accountsAdded = 0;
         int serversAdded = 0;
+        int proxiesAdded = 0;
         int skipped = 0;
 
         foreach (AccountProfile candidate in imported.Accounts)
@@ -115,6 +126,25 @@ public static class ProfileTransferService
             accountsAdded++;
         }
 
+        foreach (ProxyProfile candidate in imported.ProxyProfiles)
+        {
+            ProxyProfile? duplicate = proxies.FirstOrDefault(existingProxy => existingProxy.Id == candidate.Id);
+            if (duplicate is not null)
+            {
+                proxyIds[candidate.Id] = duplicate.Id;
+                skipped++;
+                continue;
+            }
+            Guid id = usedProxyIds.Add(candidate.Id) ? candidate.Id : NewId(usedProxyIds);
+            proxyIds[candidate.Id] = id;
+            string displayName = UniqueName(candidate.DisplayName, proxies.Select(proxy => proxy.DisplayName));
+            proxies.Add(candidate with
+            {
+                Id = id, DisplayName = displayName, Username = string.Empty, SecretReference = null
+            });
+            proxiesAdded++;
+        }
+
         foreach (ServerProfile candidate in imported.Servers)
         {
             ServerProfile? duplicate = servers.FirstOrDefault(existingServer => existingServer.Id == candidate.Id);
@@ -127,7 +157,13 @@ public static class ProfileTransferService
             Guid id = usedServerIds.Add(candidate.Id) ? candidate.Id : NewId(usedServerIds);
             serverIds[candidate.Id] = id;
             string displayName = UniqueName(candidate.DisplayName, servers.Select(server => server.DisplayName));
-            servers.Add(candidate with { Id = id, DisplayName = displayName, AdditionalData = null });
+            Guid? proxyId = candidate.ProxyProfileId is Guid importedProxyId && proxyIds.TryGetValue(importedProxyId, out Guid mapped)
+                ? mapped
+                : null;
+            servers.Add(candidate with
+            {
+                Id = id, DisplayName = displayName, ProxyProfileId = proxyId, AdditionalData = null
+            });
             serversAdded++;
         }
 
@@ -143,9 +179,10 @@ public static class ProfileTransferService
         {
             Accounts = accounts,
             Servers = servers,
+            ProxyProfiles = proxies,
             ManagedSessions = managedSessions
         };
-        return new ProfileImportResult(merged.Normalize(), accountsAdded, serversAdded, skipped);
+        return new ProfileImportResult(merged.Normalize(), accountsAdded, serversAdded, skipped, proxiesAdded);
     }
 
     private static Guid NewId(HashSet<Guid> used)

@@ -502,6 +502,41 @@ try
         }
         True(rejected, "A corrupt account store was accepted unexpectedly.");
     });
+
+    await RunAsync("separate protected secret store round trips without plaintext", async () =>
+    {
+        string path = Path.Combine(root, "local-secrets", "secrets.bin");
+        byte[] key = Encoding.UTF8.GetBytes("local-secret-store test passphrase");
+        byte[] secret = Encoding.UTF8.GetBytes("proxy-password-value");
+        try
+        {
+            using LocalSecretStore store = new(path, key);
+            await store.SetAsync("proxy.local", secret);
+            byte[]? loaded = await store.GetAsync("proxy.local");
+            try
+            {
+                True(loaded is not null && loaded.AsSpan().SequenceEqual(secret),
+                    "The protected local secret changed during round trip.");
+            }
+            finally { if (loaded is not null) CryptographicOperations.ZeroMemory(loaded); }
+            byte[] encrypted = await File.ReadAllBytesAsync(path);
+            try
+            {
+                True(!Encoding.UTF8.GetString(encrypted).Contains("proxy-password-value", StringComparison.Ordinal),
+                    "The local secret store contains plaintext.");
+            }
+            finally { CryptographicOperations.ZeroMemory(encrypted); }
+            await store.DeleteAsync("proxy.local");
+            True(await store.GetAsync("proxy.local") is null, "The local secret was not deleted.");
+            if (!OperatingSystem.IsWindows())
+                True(PrivateFileSystem.HasPrivateUnixPermissions(path), "The Linux secret store is not private.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(secret);
+        }
+    });
 }
 finally
 {

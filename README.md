@@ -42,8 +42,8 @@ Download the archive matching your Windows computer from the
 
 | System | Release asset |
 |---|---|
-| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.4.0-win-x64.zip` |
-| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.4.0-win-arm64.zip` |
+| Most Intel/AMD Windows 10/11 PCs | `OeXYZ-Minecraft-Console-Client-v1.5.0-win-x64.zip` |
+| Native Windows on ARM64 | `OeXYZ-Minecraft-Console-Client-v1.5.0-win-arm64.zip` |
 
 ### Linux installer
 
@@ -380,6 +380,7 @@ See also:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Headless CLI reference](docs/CLI.md)
+- [Local management API and Prometheus](docs/MANAGEMENT_API.md)
 - [Linux, Docker, systemd, and Raspberry Pi](docs/DEPLOYMENT.md)
 - [Release and updater integrity](docs/UPDATER.md)
 - [Objective comparison](docs/COMPARISON.md)
@@ -485,6 +486,13 @@ Released in v1.4.0: one ordered bounded outbound writer, isolated bounded
 subscriber delivery, coalesced metrics, visible drop counters, resilient status
 Ping/Pong parsing, explicit profile-backup recovery, and generated headless
 protocol capabilities across the supported catalog.
+
+### v1.5 â€” Local management, automation, proxy and failover âœ… complete
+
+Released in v1.5.0: loopback-first authenticated session management,
+Prometheus metrics, bounded declarative automations, protected SOCKS5/HTTP
+CONNECT credentials, priority failover, structured mention patterns,
+memory-only cookies, and opt-in validated server transfers.
 
 ## Responsible use
 

@@ -1,8 +1,10 @@
 using OeXYZ.Protocol;
+using OeXYZ.Core;
 using System.Net;
 using System.Net.Sockets;
 using System.IO.Compression;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -136,6 +138,50 @@ Run("resource-pack capabilities and bounded decline codecs", () =>
     Throws<NotSupportedException>(() => MinecraftConnection.RequireResourcePackResponseId([]));
     Throws<NotSupportedException>(() => MinecraftConnection.WriteResourcePackDecline(
         new PacketWriter(), current, ResourcePackResponseLayout.None));
+});
+
+Run("modern cookies stay bounded in memory and transfers require opt-in", () =>
+{
+    ProtocolDefinition protocol = ProtocolCatalog.LoadEmbedded().Resolve("26.2");
+    MinecraftConnection connection = new("127.0.0.1", 25565, "CookieTest", protocol);
+    try
+    {
+        PacketWriter stored = new();
+        stored.WriteString("oexyz:test");
+        stored.WriteVarInt(3);
+        stored.WriteBytes([1, 2, 3]);
+        connection.StoreCookie(stored.ToArray());
+        Equal(1, connection.StoredCookieCount);
+        byte[] value = connection.GetStoredCookie("oexyz:test")!;
+        True(value.AsSpan().SequenceEqual(new byte[] { 1, 2, 3 }), "Stored cookie changed.");
+
+        for (int index = 0; index < 31; index++)
+        {
+            PacketWriter item = new();
+            item.WriteString($"oexyz:key_{index}");
+            item.WriteVarInt(1);
+            item.WriteByte((byte)index);
+            connection.StoreCookie(item.ToArray());
+        }
+        Equal(32, connection.StoredCookieCount);
+        PacketWriter excessive = new();
+        excessive.WriteString("oexyz:overflow");
+        excessive.WriteVarInt(1);
+        excessive.WriteByte(1);
+        Throws<InvalidDataException>(() => connection.StoreCookie(excessive.ToArray()));
+
+        PacketWriter transfer = new();
+        transfer.WriteString("secondary.example");
+        transfer.WriteVarInt(25566);
+        connection.HandleTransfer(transfer.ToArray());
+        connection.AllowServerTransfer = true;
+        Throws<ServerTransferException>(() => connection.HandleTransfer(transfer.ToArray()));
+        PacketWriter invalidTransfer = new();
+        invalidTransfer.WriteString("https://evil.example/path");
+        invalidTransfer.WriteVarInt(25565);
+        Throws<InvalidDataException>(() => connection.HandleTransfer(invalidTransfer.ToArray()));
+    }
+    finally { connection.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
 });
 
 Run("server address parsing", () =>
@@ -286,6 +332,11 @@ Run("portable DNS SRV parser is bounded and preserves target ports", () =>
 Run("portable DNS transport validates its source and TCP fallback", () =>
 {
     VerifyDnsTransportAsync().GetAwaiter().GetResult();
+});
+
+Run("SOCKS5 and HTTP CONNECT dialers negotiate bounded local proxies", () =>
+{
+    VerifyProxyDialersAsync().GetAwaiter().GetResult();
 });
 
 Run("offline UUID compatibility", () =>
@@ -454,8 +505,12 @@ Run("player chat supports native and proxy-forwarded layouts", () =>
     current.WriteVarInt(0);
     current.WriteBoolean(false);
     current.WriteString("hello from current");
-    Equal("<Steve> hello from current",
-        PlayerChatDecoder.Decode(current.ToArray(), 773, id => id == sender ? "Steve" : null).Text);
+    DecodedPlayerChat currentDecoded =
+        PlayerChatDecoder.Decode(current.ToArray(), 773, id => id == sender ? "Steve" : null);
+    Equal("<Steve> hello from current", currentDecoded.Text);
+    Equal(sender, currentDecoded.SenderUuid);
+    True(string.Equals("Steve", currentDecoded.SenderName, StringComparison.Ordinal),
+        "Structured player-chat sender metadata was not preserved.");
 
     PacketWriter controlled = new();
     controlled.WriteVarInt(44);
@@ -495,6 +550,18 @@ Run("player chat supports native and proxy-forwarded layouts", () =>
 Run("connected socket disconnect completes", () =>
 {
     VerifyConnectedDisconnectAsync().GetAwaiter().GetResult();
+});
+
+Run("chat metadata preserves translation and private-message structure", () =>
+{
+    FormattedChatText incoming = ChatTextCodec.ParseJson(
+        "{\"translate\":\"commands.message.display.incoming\",\"with\":[\"Alex\",\"hello\"]}");
+    True(string.Equals("commands.message.display.incoming", incoming.TranslationKey, StringComparison.Ordinal),
+        "The structured translation key was not preserved.");
+    True(ChatTextCodec.IsPrivateMessageTranslationKey(incoming.TranslationKey),
+        "An incoming structured private-message key was not recognized.");
+    True(!ChatTextCodec.IsPrivateMessageTranslationKey("commands.message.display.outgoing"),
+        "An outgoing message was misclassified as an incoming private message.");
 });
 
 Run("connection phase deadlines and nonblocking code-of-conduct", () =>
@@ -867,6 +934,127 @@ static async Task VerifyDnsTransportAsync()
         await ThrowsAsync<OperationCanceledException>(() => PortableSrvResolver.QueryResolverAsync(
             IPAddress.Loopback, port, question, transaction, query, cancellation.Token));
     }
+}
+
+static async Task VerifyProxyDialersAsync()
+{
+    await VerifyHttpProxyAsync(authenticate: false);
+    await VerifyHttpProxyAsync(authenticate: true);
+    await VerifySocksProxyAsync(authenticate: false);
+    await VerifySocksProxyAsync(authenticate: true);
+}
+
+static async Task VerifyHttpProxyAsync(bool authenticate)
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    byte[] password = Encoding.UTF8.GetBytes("proxy-secret");
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+    Task server = Task.Run(async () =>
+    {
+        using TcpClient client = await listener.AcceptTcpClientAsync(timeout.Token);
+        NetworkStream stream = client.GetStream();
+        byte[] header = new byte[8192];
+        int length = 0;
+        while (header.AsSpan(0, length).IndexOf("\r\n\r\n"u8) < 0)
+        {
+            int read = await stream.ReadAsync(header.AsMemory(length), timeout.Token);
+            if (read == 0) throw new EndOfStreamException();
+            length += read;
+        }
+        string request = Encoding.ASCII.GetString(header, 0, length);
+        True(request.StartsWith("CONNECT example.org:25565 HTTP/1.1", StringComparison.Ordinal),
+            "HTTP CONNECT authority changed.");
+        True(request.Contains("Proxy-Authorization:", StringComparison.Ordinal) == authenticate,
+            "HTTP proxy authentication header policy is wrong.");
+        await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), timeout.Token);
+        byte[] data = new byte[1];
+        await stream.ReadExactlyAsync(data, timeout.Token);
+        data[0]++;
+        await stream.WriteAsync(data, timeout.Token);
+    }, timeout.Token);
+    ProxyProfile profile = new()
+    {
+        DisplayName = "HTTP test",
+        Kind = ProxyKind.HttpConnect,
+        Host = "127.0.0.1",
+        Port = port,
+        Username = authenticate ? "user" : string.Empty
+    };
+    using ProxyConnectionDialer dialer = new(profile, authenticate ? password : []);
+    await using Stream tunnel = await dialer.ConnectAsync("example.org", 25565, timeout.Token);
+    await tunnel.WriteAsync(new byte[] { 0x41 }, timeout.Token);
+    byte[] echoed = new byte[1];
+    await tunnel.ReadExactlyAsync(echoed, timeout.Token);
+    Equal((byte)0x42, echoed[0]);
+    await server;
+    CryptographicOperations.ZeroMemory(password);
+}
+
+static async Task VerifySocksProxyAsync(bool authenticate)
+{
+    using TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    byte[] password = Encoding.UTF8.GetBytes("proxy-secret");
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+    Task server = Task.Run(async () =>
+    {
+        using TcpClient client = await listener.AcceptTcpClientAsync(timeout.Token);
+        NetworkStream stream = client.GetStream();
+        byte[] greeting = new byte[2];
+        await stream.ReadExactlyAsync(greeting, timeout.Token);
+        byte[] methods = new byte[greeting[1]];
+        await stream.ReadExactlyAsync(methods, timeout.Token);
+        await stream.WriteAsync(new byte[] { 5, authenticate ? (byte)2 : (byte)0 }, timeout.Token);
+        if (authenticate)
+        {
+            byte[] authHeader = new byte[2];
+            await stream.ReadExactlyAsync(authHeader, timeout.Token);
+            byte[] username = new byte[authHeader[1]];
+            await stream.ReadExactlyAsync(username, timeout.Token);
+            int passwordLength = stream.ReadByte();
+            byte[] receivedPassword = new byte[passwordLength];
+            await stream.ReadExactlyAsync(receivedPassword, timeout.Token);
+            True(Encoding.UTF8.GetString(username) == "user" && receivedPassword.AsSpan().SequenceEqual(password),
+                "SOCKS5 credentials changed in transit.");
+            await stream.WriteAsync(new byte[] { 1, 0 }, timeout.Token);
+        }
+        byte[] connect = new byte[4];
+        await stream.ReadExactlyAsync(connect, timeout.Token);
+        int addressLength = connect[3] switch
+        {
+            1 => 4,
+            4 => 16,
+            3 => stream.ReadByte(),
+            _ => throw new InvalidDataException("Unexpected SOCKS5 address type.")
+        };
+        byte[] destination = new byte[addressLength + 2];
+        await stream.ReadExactlyAsync(destination, timeout.Token);
+        await stream.WriteAsync(new byte[] { 5, 0, 0, 1, 127, 0, 0, 1, 0, 0 }, timeout.Token);
+        byte[] data = new byte[1];
+        await stream.ReadExactlyAsync(data, timeout.Token);
+        data[0]++;
+        await stream.WriteAsync(data, timeout.Token);
+    }, timeout.Token);
+    ProxyProfile profile = new()
+    {
+        DisplayName = "SOCKS test",
+        Kind = ProxyKind.Socks5,
+        Host = "127.0.0.1",
+        Port = port,
+        DnsMode = ProxyDnsMode.Proxy,
+        Username = authenticate ? "user" : string.Empty
+    };
+    using ProxyConnectionDialer dialer = new(profile, authenticate ? password : []);
+    await using Stream tunnel = await dialer.ConnectAsync("example.org", 25565, timeout.Token);
+    await tunnel.WriteAsync(new byte[] { 0x41 }, timeout.Token);
+    byte[] echoed = new byte[1];
+    await tunnel.ReadExactlyAsync(echoed, timeout.Token);
+    Equal((byte)0x42, echoed[0]);
+    await server;
+    CryptographicOperations.ZeroMemory(password);
 }
 
 static async Task VerifyConnectionPhasesAsync()

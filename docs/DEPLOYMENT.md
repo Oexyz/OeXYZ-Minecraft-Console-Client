@@ -18,7 +18,7 @@ SHA-256, and atomically installs `~/.local/bin/oexyz`. For a pinned and manually
 reviewed installation, use the release tag and optional GitHub attestation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Oexyz/OeXYZ-Minecraft-Console-Client/v1.4.0/install.sh | sh -s -- --version 1.4.0 --verify-attestation
+curl -fsSL https://raw.githubusercontent.com/Oexyz/OeXYZ-Minecraft-Console-Client/v1.5.0/install.sh | sh -s -- --version 1.5.0 --verify-attestation
 ```
 
 `--verify-attestation` requires a configured GitHub CLI. SHA-256 verification
@@ -30,11 +30,11 @@ Extract the archive matching the machine:
 
 | Platform | Archive |
 |---|---|
-| Intel/AMD 64-bit Linux | `OeXYZ-Minecraft-Console-Client-v1.4.0-linux-x64.tar.gz` |
-| ARM64 Linux / Raspberry Pi OS 64-bit | `OeXYZ-Minecraft-Console-Client-v1.4.0-linux-arm64.tar.gz` |
+| Intel/AMD 64-bit Linux | `OeXYZ-Minecraft-Console-Client-v1.5.0-linux-x64.tar.gz` |
+| ARM64 Linux / Raspberry Pi OS 64-bit | `OeXYZ-Minecraft-Console-Client-v1.5.0-linux-arm64.tar.gz` |
 
 ```bash
-tar -xzf OeXYZ-Minecraft-Console-Client-v1.4.0-linux-x64.tar.gz
+tar -xzf OeXYZ-Minecraft-Console-Client-v1.5.0-linux-x64.tar.gz
 chmod 755 oexyz
 ./oexyz --help
 ./oexyz install-path
@@ -195,6 +195,13 @@ The container healthcheck calls the internal loopback endpoint. No port is
 published to the host by default. `/health` reports liveness, `/ready` reports
 whether sessions are ready, and `/status` exposes bounded local metrics without
 account identifiers or remote server addresses.
+
+v1.5 extends that same listener with `/metrics` and authenticated `/v1`
+management actions. Compose still publishes no port by default. Create a token
+inside `/keys` (for example with `control-token-create`) and pass its file path
+explicitly; never place the token in Compose environment variables. Remote
+control requires `--allow-remote-control` and should be exposed only through a
+VPN or authenticated TLS reverse proxy.
 
 ### GHCR publication requirement
 

@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -23,15 +22,16 @@ public static class MinecraftServerDiscovery
         string address,
         int customPort = 0,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IConnectionDialer? dialer = null)
     {
         using CancellationTokenSource timeoutSource = new(timeout ?? TimeSpan.FromSeconds(8));
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
         ServerAddress endpoint = await ServerAddress.Parse(address, customPort).ResolveSrvAsync(linked.Token).ConfigureAwait(false);
-        using TcpClient client = new() { NoDelay = true };
         Stopwatch statusStopwatch = Stopwatch.StartNew();
-        await client.ConnectAsync(endpoint.NetworkHost, endpoint.Port, linked.Token).ConfigureAwait(false);
-        await using MinecraftPacketStream packets = new(client.GetStream());
+        await using Stream transport = await (dialer ?? DirectConnectionDialer.Instance)
+            .ConnectAsync(endpoint.NetworkHost, endpoint.Port, linked.Token).ConfigureAwait(false);
+        await using MinecraftPacketStream packets = new(transport);
         await packets.WriteAsync(0, writer =>
         {
             writer.WriteVarInt(776);

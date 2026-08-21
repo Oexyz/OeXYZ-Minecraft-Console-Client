@@ -12,7 +12,7 @@ const selectedNames = {
   loginServerbound: ['login_start', 'encryption_begin', 'login_plugin_response', 'login_acknowledged', 'cookie_response'],
   configurationClientbound: ['custom_payload', 'disconnect', 'finish_configuration', 'keep_alive', 'ping', 'registry_data', 'select_known_packs', 'cookie_request', 'store_cookie', 'transfer', 'kick_disconnect', 'code_of_conduct', 'resource_pack_send', 'add_resource_pack', 'remove_resource_pack'],
   configurationServerbound: ['client_information', 'settings', 'custom_payload', 'finish_configuration', 'keep_alive', 'pong', 'select_known_packs', 'cookie_response', 'resource_pack_receive', 'accept_code_of_conduct'],
-  playClientbound: ['login', 'keep_alive', 'kick_disconnect', 'position', 'chat', 'system_chat', 'player_chat', 'profileless_chat', 'update_health', 'death_combat_event', 'respawn', 'start_configuration', 'ping', 'player_info', 'player_info_update', 'player_info_remove', 'player_remove', 'resource_pack_send', 'add_resource_pack', 'remove_resource_pack'],
+  playClientbound: ['login', 'keep_alive', 'kick_disconnect', 'position', 'chat', 'system_chat', 'player_chat', 'profileless_chat', 'update_health', 'death_combat_event', 'respawn', 'start_configuration', 'ping', 'player_info', 'player_info_update', 'player_info_remove', 'player_remove', 'resource_pack_send', 'add_resource_pack', 'remove_resource_pack', 'cookie_request', 'store_cookie', 'transfer'],
   playServerbound: ['keep_alive', 'teleport_confirm', 'settings', 'client_information', 'custom_payload', 'chat', 'chat_message', 'chat_command', 'chat_session_update', 'client_command', 'client_status', 'position', 'position_look', 'configuration_acknowledged', 'player_loaded', 'pong', 'resource_pack_receive']
 }
 

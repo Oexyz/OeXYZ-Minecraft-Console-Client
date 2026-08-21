@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text;
 using OeXYZ.Core;
 using OeXYZ.Protocol;
 using OeXYZ.Session;
@@ -47,6 +49,8 @@ try
     True(!combined.Contains("do-not-include-this", StringComparison.Ordinal), "Startup command secret leaked into support package.");
     True(!combined.Contains("accounts.bin", StringComparison.OrdinalIgnoreCase), "Account storage was included.");
     True(combined.Contains("[REDACTED]", StringComparison.Ordinal), "Expected redaction marker is missing.");
+    True(combined.Contains("automationRuleCount", StringComparison.Ordinal),
+        "Advanced profile diagnostics are missing from the support package.");
     Console.WriteLine("PASS: sanitized support package excludes tokens, passwords, account storage and commands");
 }
 finally
@@ -78,6 +82,229 @@ await using (LoopbackHealthServer health = new(registry, 0))
     True(stopped.StatusCode == HttpStatusCode.ServiceUnavailable, "A fully stopped runtime remained healthy.");
 }
 Console.WriteLine("PASS: bounded loopback health and readiness endpoint");
+
+List<string> automationSends = [];
+SessionAutomationEngine automation = new(
+    [new AutomationRuleProfile
+    {
+        Name = "Chat response",
+        Trigger = AutomationTriggerKind.ChatContains,
+        Pattern = "hello bot",
+        CooldownSeconds = 60,
+        MaximumRunsPerHour = 2,
+        Actions = [new AutomationActionProfile { Kind = AutomationActionKind.SendChat, Value = "hello safely" }]
+    }],
+    (message, _) => { automationSends.Add(message); return Task.CompletedTask; },
+    _ => Task.CompletedTask,
+    () => { },
+    () => { },
+    _ => { },
+    _ => { });
+await automation.TriggerAsync(AutomationTriggerKind.ChatContains, "player: hello bot", CancellationToken.None);
+await automation.TriggerAsync(AutomationTriggerKind.ChatContains, "player: hello bot", CancellationToken.None);
+True(automationSends.SequenceEqual(["hello safely"]),
+    "Automation matching/cooldown did not execute exactly one bounded action.");
+Console.WriteLine("PASS: bounded declarative automation matching and cooldown");
+
+Guid ownPlayer = Guid.NewGuid();
+Guid departedPlayer = Guid.NewGuid();
+Guid joinedPlayer = Guid.NewGuid();
+(IReadOnlyList<PlayerListEntry> joinedPlayers, IReadOnlyList<PlayerListEntry> leftPlayers) =
+    ConsoleSession.FindPlayerListChanges(
+        [
+            new PlayerListEntry(ownPlayer, "Self", 0, 0),
+            new PlayerListEntry(departedPlayer, "Departed", 0, 0)
+        ],
+        [
+            new PlayerListEntry(ownPlayer, "Self", 0, 0),
+            new PlayerListEntry(joinedPlayer, "Joined", 0, 0)
+        ],
+        ownPlayer);
+True(joinedPlayers.Count == 1 && joinedPlayers[0].Uuid == joinedPlayer &&
+     leftPlayers.Count == 1 && leftPlayers[0].Uuid == departedPlayer,
+    "Structured player-list changes did not produce bounded join and leave triggers.");
+Console.WriteLine("PASS: structured player-list joins and leaves feed automation triggers");
+
+string managementRoot = Path.Combine(Path.GetTempPath(), "oexyz-management-tests", Guid.NewGuid().ToString("N"));
+try
+{
+    AccountProfile managedAccount = new()
+    {
+        DisplayName = "Managed",
+        Kind = AccountKind.Offline,
+        LoginHint = "ManagedUser"
+    };
+    ServerProfile managedServer = new()
+    {
+        DisplayName = "Managed local",
+        Address = "127.0.0.1",
+        CustomPort = 29997,
+        Version = "26.2",
+        AutoReconnect = false,
+        AntiAfk = false
+    };
+    await using ConsoleSession managedSession = new(
+        managedAccount, managedServer, new OfflineIdentityProvider(), () => { }, managementRoot);
+    await using SessionControlManager manager = new();
+    string sessionId = manager.Register(managedSession);
+    SessionRuntimeRegistry managementRegistry = new();
+    managementRegistry.Register(managedSession);
+    byte[] token = RandomNumberGenerator.GetBytes(ControlTokenFile.TokenBytes);
+    try
+    {
+        await using LoopbackHealthServer management = new(managementRegistry, 0, manager, token);
+        await management.StartAsync();
+        using HttpClient client = new() { BaseAddress = new Uri($"http://127.0.0.1:{management.Port}") };
+        string metrics = await client.GetStringAsync("/metrics");
+        True(metrics.Contains("oexyz_sessions_active", StringComparison.Ordinal) &&
+             !metrics.Contains("ManagedUser", StringComparison.Ordinal),
+            "Prometheus metrics are missing or contain profile data.");
+
+        using HttpResponseMessage unauthenticated = await client.GetAsync("/v1/sessions");
+        True(unauthenticated.StatusCode == HttpStatusCode.Unauthorized,
+            "Management sessions were exposed without a token.");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "wrong");
+        using HttpResponseMessage wrong = await client.GetAsync("/v1/sessions");
+        True(wrong.StatusCode == HttpStatusCode.Unauthorized, "A wrong management token was accepted.");
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", Convert.ToBase64String(new byte[ControlTokenFile.TokenBytes - 1]));
+        using HttpResponseMessage wrongLength = await client.GetAsync("/v1/sessions");
+        True(wrongLength.StatusCode == HttpStatusCode.Unauthorized,
+            "A management token with the wrong decoded length was accepted.");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Convert.ToBase64String(token));
+        string sessionsJson = await client.GetStringAsync("/v1/sessions");
+        True(sessionsJson.Contains(sessionId, StringComparison.Ordinal), "The registered managed session is missing.");
+        string unknownPath = await RawHttpStatusAsync(management.Port,
+            "GET /v1/x HTTP/1.1\r\nHost: localhost\r\n" +
+            $"Authorization: Bearer {Convert.ToBase64String(token)}\r\n\r\n");
+        True(unknownPath.Contains(" 404 ", StringComparison.Ordinal),
+            "An unknown short management path was not rejected safely.");
+        string duplicateLength = await RawHttpStatusAsync(management.Port,
+            $"POST /v1/sessions/{sessionId}/send HTTP/1.1\r\nHost: localhost\r\n" +
+            $"Authorization: Bearer {Convert.ToBase64String(token)}\r\n" +
+            "Content-Length: 0\r\nContent-Length: 0\r\n\r\n");
+        True(duplicateLength.Contains(" 413 ", StringComparison.Ordinal),
+            "Duplicate Content-Length headers were accepted.");
+        string transferEncoding = await RawHttpStatusAsync(management.Port,
+            $"POST /v1/sessions/{sessionId}/send HTTP/1.1\r\nHost: localhost\r\n" +
+            $"Authorization: Bearer {Convert.ToBase64String(token)}\r\n" +
+            "Transfer-Encoding: chunked\r\n\r\n");
+        True(transferEncoding.Contains(" 400 ", StringComparison.Ordinal),
+            "An unsupported Transfer-Encoding was accepted.");
+        string oversizedHeaders = await RawHttpStatusAsync(management.Port,
+            "GET /health HTTP/1.1\r\nHost: localhost\r\nX-Fill: " +
+            new string('a', LoopbackHealthServer.MaximumHeaderBytes) + "\r\n\r\n");
+        True(oversizedHeaders.Contains(" 431 ", StringComparison.Ordinal),
+            "Oversized management headers were accepted.");
+
+        using HttpResponseMessage started = await client.PostAsync(
+            $"/v1/sessions/{sessionId}/start", new ByteArrayContent([]));
+        True(started.StatusCode == HttpStatusCode.OK, "The authenticated start action failed.");
+        await managedSession.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        using StringContent invalidJson = new("{bad", Encoding.UTF8, "application/json");
+        using HttpResponseMessage invalid = await client.PostAsync($"/v1/sessions/{sessionId}/send", invalidJson);
+        True(invalid.StatusCode == HttpStatusCode.Conflict, "Invalid management JSON was not rejected.");
+        using TcpClient rawClient = new();
+        await rawClient.ConnectAsync(IPAddress.Loopback, management.Port);
+        NetworkStream rawStream = rawClient.GetStream();
+        byte[] oversizedHeader = Encoding.ASCII.GetBytes(
+            $"POST /v1/sessions/{sessionId}/send HTTP/1.1\r\nHost: localhost\r\n" +
+            $"Authorization: Bearer {Convert.ToBase64String(token)}\r\n" +
+            $"Content-Length: {LoopbackHealthServer.MaximumBodyBytes + 1}\r\n\r\n");
+        await rawStream.WriteAsync(oversizedHeader);
+        using StreamReader rawReader = new(rawStream, Encoding.ASCII, leaveOpen: true);
+        string responseLine = await rawReader.ReadLineAsync() ?? string.Empty;
+        True(responseLine.Contains(" 413 ", StringComparison.Ordinal),
+            "An oversized management body was not rejected with 413.");
+        string countedMetrics = await client.GetStringAsync("/metrics");
+        True(countedMetrics.Contains("oexyz_authentication_failures_total 3", StringComparison.Ordinal),
+            "Management authentication failures were not exposed as an aggregate counter.");
+
+        await using LoopbackHealthServer remote = new(managementRegistry, 0, manager, token, allowRemote: true);
+        await remote.StartAsync();
+        using HttpClient remoteClient = new() { BaseAddress = new Uri($"http://127.0.0.1:{remote.Port}") };
+        using HttpResponseMessage remoteMetricsDenied = await remoteClient.GetAsync("/metrics");
+        True(remoteMetricsDenied.StatusCode == HttpStatusCode.Unauthorized,
+            "Remote-bound Prometheus metrics were exposed without authentication.");
+        remoteClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", Convert.ToBase64String(token));
+        using HttpResponseMessage remoteMetricsAllowed = await remoteClient.GetAsync("/metrics");
+        True(remoteMetricsAllowed.StatusCode == HttpStatusCode.OK,
+            "Authenticated remote-bound Prometheus metrics were unavailable.");
+    }
+    finally
+    {
+        CryptographicOperations.ZeroMemory(token);
+    }
+Console.WriteLine("PASS: authenticated local management API and Prometheus metrics");
+}
+finally
+{
+    if (Directory.Exists(managementRoot)) Directory.Delete(managementRoot, recursive: true);
+}
+
+string failoverRoot = Path.Combine(Path.GetTempPath(), "oexyz-failover-tests", Guid.NewGuid().ToString("N"));
+try
+{
+    using TcpListener secondary = new(IPAddress.Loopback, 0);
+    secondary.Start();
+    int secondaryPort = ((IPEndPoint)secondary.LocalEndpoint).Port;
+    using CancellationTokenSource failoverTimeout = new(TimeSpan.FromSeconds(12));
+    TaskCompletionSource releaseSecondary = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    Task secondaryServer = Task.Run(async () =>
+    {
+        using (TcpClient statusPeer = await secondary.AcceptTcpClientAsync(failoverTimeout.Token)) { }
+        using TcpClient loginPeer = await secondary.AcceptTcpClientAsync(failoverTimeout.Token);
+        NetworkStream stream = loginPeer.GetStream();
+        await stream.WriteAsync(new byte[] { 1, 2, 1, 1 }, failoverTimeout.Token);
+        await stream.FlushAsync(failoverTimeout.Token);
+        await releaseSecondary.Task.WaitAsync(failoverTimeout.Token);
+    }, failoverTimeout.Token);
+    ServerProfile failoverProfile = new()
+    {
+        DisplayName = "Failover",
+        Address = "127.0.0.1",
+        CustomPort = 29991,
+        Version = "1.8.8",
+        AutoReconnect = true,
+        ReconnectInitialDelaySeconds = 1,
+        ReconnectMaximumDelaySeconds = 1,
+        ReconnectMaximumAttempts = 3,
+        AntiAfk = false,
+        Endpoints =
+        [
+            new ServerEndpointProfile
+            {
+                Address = "127.0.0.1", CustomPort = 29991, Priority = 0,
+                FailureThreshold = 1, CooldownSeconds = 10
+            },
+            new ServerEndpointProfile
+            {
+                Address = "127.0.0.1", CustomPort = secondaryPort, Priority = 1,
+                FailureThreshold = 1, CooldownSeconds = 10
+            }
+        ]
+    };
+    await using ConsoleSession failoverSession = new(
+        new AccountProfile { DisplayName = "Failover", Kind = AccountKind.Offline, LoginHint = "FailoverUser" },
+        failoverProfile,
+        new OfflineIdentityProvider(),
+        () => { },
+        failoverRoot);
+    failoverSession.Start();
+    await WaitUntilAsync(() => failoverSession.IsConnected, TimeSpan.FromSeconds(8));
+    True(failoverSession.Snapshot.ReconnectCount == 0,
+        "A pre-Play endpoint failover was incorrectly counted as a completed-session reconnect.");
+    failoverSession.Stop();
+    releaseSecondary.TrySetResult();
+    await failoverSession.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+    await secondaryServer.WaitAsync(TimeSpan.FromSeconds(2));
+    Console.WriteLine("PASS: transient primary failure switches to the controlled secondary endpoint");
+}
+finally
+{
+    if (Directory.Exists(failoverRoot)) Directory.Delete(failoverRoot, recursive: true);
+}
 
 string rotationRoot = Path.Combine(Path.GetTempPath(), "oexyz-log-rotation-tests", Guid.NewGuid().ToString("N"));
 try
@@ -377,8 +604,8 @@ try
     True(doctor.Successful, "Local-only doctor checks failed unexpectedly.");
     True(doctor.Checks.Any(check => check.Name == "State directories" && check.Status == DoctorCheckStatus.Pass),
         "Doctor did not verify writable state directories.");
-    True(doctor.Checks.All(check => !check.Message.Contains("token", StringComparison.OrdinalIgnoreCase)),
-        "Doctor output unexpectedly contained token material.");
+    True(doctor.Checks.All(check => !check.Message.Contains("super-secret", StringComparison.OrdinalIgnoreCase)),
+        "Doctor output unexpectedly contained secret material.");
     DoctorReport invalidProfile = await DoctorService.RunAsync(doctorPaths, new ProfileDocument
     {
         Accounts = [new AccountProfile { DisplayName = "Broken", Kind = AccountKind.Offline, LoginHint = "bad name" }]
@@ -485,6 +712,19 @@ static SessionSnapshot Snapshot(bool connected) => new(
     null,
     [],
     connected);
+
+static async Task<string> RawHttpStatusAsync(int port, string request)
+{
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(3));
+    using TcpClient client = new();
+    await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+    NetworkStream stream = client.GetStream();
+    byte[] bytes = Encoding.ASCII.GetBytes(request);
+    await stream.WriteAsync(bytes, timeout.Token);
+    byte[] response = new byte[256];
+    int length = await stream.ReadAsync(response, timeout.Token);
+    return Encoding.ASCII.GetString(response, 0, length).Split("\r\n", StringSplitOptions.None)[0];
+}
 
 static void True(bool value, string message)
 {

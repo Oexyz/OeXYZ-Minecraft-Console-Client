@@ -9,11 +9,25 @@ public enum ConnectionState
     Play
 }
 
+public enum ChatMessageKind
+{
+    Unknown,
+    Player,
+    System,
+    Profileless,
+    Legacy
+}
+
 public sealed record ChatLine(
     DateTimeOffset Timestamp,
     string Text,
     bool IsActionBar = false,
-    FormattedChatText? Formatting = null);
+    FormattedChatText? Formatting = null,
+    string? TranslationKey = null,
+    Guid? SenderUuid = null,
+    string? SenderName = null,
+    ChatMessageKind Kind = ChatMessageKind.Unknown,
+    bool IsPrivateMessage = false);
 
 public sealed record PlayerPosition(double X, double Y, double Z, float Yaw, float Pitch);
 
@@ -26,7 +40,10 @@ public sealed record ChatStyle(
 
 public sealed record ChatRun(string Text, ChatStyle Style);
 
-public sealed record FormattedChatText(string Text, IReadOnlyList<ChatRun> Runs);
+public sealed record FormattedChatText(
+    string Text,
+    IReadOnlyList<ChatRun> Runs,
+    string? TranslationKey = null);
 
 public sealed record PlayerListEntry(
     Guid Uuid,
@@ -50,6 +67,16 @@ public sealed record PacketTrace(
     int PayloadBytes,
     int WireBytes,
     bool Known);
+
+public sealed record ServerTransferRequest(string Host, ushort Port);
+
+public sealed class ServerTransferException : IOException
+{
+    public ServerTransferException(ServerTransferRequest transfer)
+        : base("The server requested a controlled transfer.") => Transfer = transfer;
+
+    public ServerTransferRequest Transfer { get; }
+}
 
 public sealed record ConnectionMetrics(
     DateTimeOffset? ConnectedAt,

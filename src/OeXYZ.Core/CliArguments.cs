@@ -8,12 +8,18 @@ public sealed record CliArguments(
     string? MinecraftVersion,
     string? Group,
     string? LoginHint,
+    string? Proxy,
+    string? ProxyKind,
+    bool ProxyDns,
+    string? ProxyUsername,
     int Port,
     string? ConfigPath,
     string? LogFile,
     string LogLevel,
     bool InspectPackets,
     string? AccountKeyFile,
+    string? ControlTokenFile,
+    bool AllowRemoteControl,
     int HealthPort,
     bool Dashboard,
     bool NoInput,
@@ -30,12 +36,18 @@ public sealed record CliArguments(
         string? minecraftVersion = null;
         string? group = null;
         string? loginHint = null;
+        string? proxy = null;
+        string? proxyKind = null;
+        bool proxyDns = false;
+        string? proxyUsername = null;
         int port = 0;
         string? config = null;
         string? logFile = null;
         string logLevel = "information";
         bool inspect = false;
         string? accountKeyFile = null;
+        string? controlTokenFile = null;
+        bool allowRemoteControl = false;
         int healthPort = 0;
         bool dashboard = false;
         bool noInput = false;
@@ -52,17 +64,23 @@ public sealed record CliArguments(
                 case "--inspect-packets": inspect = true; break;
                 case "--dashboard": dashboard = true; break;
                 case "--no-input": noInput = true; break;
+                case "--allow-remote-control": allowRemoteControl = true; break;
+                case "--proxy-dns": proxyDns = true; break;
                 case "--json": jsonOutput = true; break;
                 case "--account": account = ReadValue(arguments, ref index, value); break;
                 case "--address": address = ReadValue(arguments, ref index, value); break;
                 case "--minecraft-version": minecraftVersion = ReadValue(arguments, ref index, value); break;
                 case "--group": group = ReadValue(arguments, ref index, value); break;
                 case "--login-hint": loginHint = ReadValue(arguments, ref index, value); break;
+                case "--proxy-kind": proxyKind = ReadValue(arguments, ref index, value).ToLowerInvariant(); break;
+                case "--proxy": proxy = ReadValue(arguments, ref index, value); break;
+                case "--proxy-username": proxyUsername = ReadValue(arguments, ref index, value); break;
                 case "--port": port = ReadInteger(arguments, ref index, value, 1, 65535); break;
                 case "--config": config = ReadValue(arguments, ref index, value); break;
                 case "--log-file": logFile = ReadValue(arguments, ref index, value); break;
                 case "--log-level": logLevel = ReadValue(arguments, ref index, value).ToLowerInvariant(); break;
                 case "--account-key-file": accountKeyFile = ReadValue(arguments, ref index, value); break;
+                case "--control-token-file" or "--file": controlTokenFile = ReadValue(arguments, ref index, value); break;
                 case "--health-port": healthPort = ReadInteger(arguments, ref index, value, 1, 65535); break;
                 case "--max-sessions": maximumSessions = ReadInteger(arguments, ref index, value, 1, 128); break;
                 default:
@@ -85,12 +103,18 @@ public sealed record CliArguments(
             minecraftVersion,
             group,
             loginHint,
+            proxy,
+            proxyKind,
+            proxyDns,
+            proxyUsername,
             port,
             config,
             logFile,
             logLevel,
             inspect,
             accountKeyFile,
+            controlTokenFile,
+            allowRemoteControl,
             healthPort,
             dashboard,
             noInput,

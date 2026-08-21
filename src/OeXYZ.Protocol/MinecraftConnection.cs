@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -15,12 +14,16 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private const int MaximumResourcePackUrlCharacters = 8192;
     private const int MaximumResourcePackHashCharacters = 128;
     private const int MaximumResourcePackPromptCharacters = 4096;
+    private const int MaximumCookies = 32;
+    private const int MaximumCookieKeyCharacters = 128;
+    private const int MaximumCookieValueBytes = 5120;
     private readonly ProtocolDefinition protocol;
     private readonly string host;
     private readonly string handshakeHost;
     private readonly ushort port;
     private readonly MinecraftIdentity identity;
     private readonly MinecraftServicesClient servicesClient;
+    private readonly IConnectionDialer dialer;
     private readonly ConnectionDeadlinePolicy deadlines;
     private readonly ProtocolEventDispatcher eventDispatcher;
     private readonly CancellationTokenSource lifetime = new();
@@ -30,10 +33,11 @@ public sealed class MinecraftConnection : IAsyncDisposable
     private readonly TaskCompletionSource codeOfConductStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object playersLock = new();
     private readonly Dictionary<Guid, PlayerListEntry> players = [];
+    private readonly Dictionary<string, byte[]> cookies = new(StringComparer.Ordinal);
     private readonly object unknownPacketsLock = new();
     private readonly Dictionary<string, long> unknownPackets = new(StringComparer.Ordinal);
     private readonly object codeOfConductLock = new();
-    private TcpClient? tcpClient;
+    private Stream? transport;
     private MinecraftPacketStream? packets;
     private Task? receiveTask;
     private readonly Task metricsPublisherTask;
@@ -74,9 +78,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
         MinecraftServicesClient? servicesClient = null,
-        int? initialPingMilliseconds = null)
+        int? initialPingMilliseconds = null,
+        IConnectionDialer? dialer = null)
         : this(host, host, port, identity, protocol, servicesClient, initialPingMilliseconds,
-            ConnectionDeadlinePolicy.Default)
+            ConnectionDeadlinePolicy.Default, dialer)
     {
     }
 
@@ -85,9 +90,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         MinecraftIdentity identity,
         ProtocolDefinition protocol,
         MinecraftServicesClient? servicesClient = null,
-        int? initialPingMilliseconds = null)
+        int? initialPingMilliseconds = null,
+        IConnectionDialer? dialer = null)
         : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient,
-            initialPingMilliseconds, ConnectionDeadlinePolicy.Default)
+            initialPingMilliseconds, ConnectionDeadlinePolicy.Default, dialer)
     {
     }
 
@@ -97,9 +103,10 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ProtocolDefinition protocol,
         ConnectionDeadlinePolicy deadlines,
         MinecraftServicesClient? servicesClient = null,
-        int? initialPingMilliseconds = null)
+        int? initialPingMilliseconds = null,
+        IConnectionDialer? dialer = null)
         : this(address.NetworkHost, address.HandshakeHost, address.Port, identity, protocol, servicesClient,
-            initialPingMilliseconds, deadlines)
+            initialPingMilliseconds, deadlines, dialer)
     {
     }
 
@@ -111,7 +118,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         ProtocolDefinition protocol,
         MinecraftServicesClient? servicesClient,
         int? initialPingMilliseconds,
-        ConnectionDeadlinePolicy deadlines)
+        ConnectionDeadlinePolicy deadlines,
+        IConnectionDialer? dialer)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(handshakeHost);
@@ -125,6 +133,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
         this.identity = identity;
         this.protocol = protocol;
         this.servicesClient = servicesClient ?? new MinecraftServicesClient();
+        this.dialer = dialer ?? DirectConnectionDialer.Instance;
         this.deadlines = deadlines ?? throw new ArgumentNullException(nameof(deadlines));
         deadlines.Validate();
         eventDispatcher = new ProtocolEventDispatcher(_ => Interlocked.Increment(ref subscriberFailures));
@@ -147,6 +156,7 @@ public sealed class MinecraftConnection : IAsyncDisposable
     public event Action<PacketTrace>? PacketTraced;
     public event Action<string>? UnknownPacketObserved;
     public bool PacketInspectionEnabled { get; set; }
+    public bool AllowServerTransfer { get; set; }
 
     public Func<string, CancellationToken, Task<bool>>? CodeOfConductApproval { get; set; }
 
@@ -188,28 +198,20 @@ public sealed class MinecraftConnection : IAsyncDisposable
     }
 
     public long UnknownPacketOverflowCount => Interlocked.Read(ref unknownPacketOverflow);
+    internal int StoredCookieCount => cookies.Count;
+    internal byte[]? GetStoredCookie(string key) => cookies.TryGetValue(key, out byte[]? value) ? value.ToArray() : null;
 
     public void Disconnect()
     {
         if (Interlocked.Exchange(ref stopping, 1) == 0)
             lifetime.Cancel();
 
-        TcpClient? activeClient = Interlocked.Exchange(ref tcpClient, null);
-        if (activeClient is null)
+        Stream? activeTransport = Interlocked.Exchange(ref transport, null);
+        if (activeTransport is null)
             return;
-
-        try
-        {
-            activeClient.Client.Shutdown(SocketShutdown.Both);
-        }
-        catch (SocketException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        activeClient.Dispose();
+        try { activeTransport.Dispose(); }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
     }
 
     public void Abort(Exception reason)
@@ -225,15 +227,14 @@ public sealed class MinecraftConnection : IAsyncDisposable
     {
         if (state != ConnectionState.Disconnected) throw new InvalidOperationException("This connection has already been started.");
         SetState(ConnectionState.Connecting);
-        TcpClient client = new() { NoDelay = true };
-        tcpClient = client;
-
+        Stream? connected = null;
         await RunWithDeadlineAsync(
-            token => client.ConnectAsync(host, port, token).AsTask(),
+            async token => connected = await dialer.ConnectAsync(host, port, token).ConfigureAwait(false),
             ConnectionPhase.TcpConnect,
             deadlines.TcpConnect,
             cancellationToken).ConfigureAwait(false);
-        packets = new MinecraftPacketStream(client.GetStream());
+        transport = connected ?? throw new IOException("The connection dialer returned no transport stream.");
+        packets = new MinecraftPacketStream(transport);
         packets.PacketWritten += OnPacketWritten;
         Raise(Log, $"TCP connection established to {host}:{port}.");
 
@@ -584,13 +585,20 @@ public sealed class MinecraftConnection : IAsyncDisposable
 
         if (Is(inbound, "cookie_request", packet.Id))
         {
-            PacketReader reader = new(packet.Payload);
-            string key = reader.ReadString();
-            await packets!.WriteAsync(Require(protocol.PacketIds.ConfigurationServerbound, "cookie_response"), writer =>
-            {
-                writer.WriteString(key);
-                writer.WriteBoolean(false);
-            }, cancellationToken).ConfigureAwait(false);
+            await HandleCookieRequestAsync(packet.Payload, protocol.PacketIds.ConfigurationServerbound, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (Is(inbound, "store_cookie", packet.Id))
+        {
+            StoreCookie(packet.Payload);
+            return;
+        }
+
+        if (Is(inbound, "transfer", packet.Id))
+        {
+            HandleTransfer(packet.Payload);
             return;
         }
 
@@ -693,6 +701,25 @@ public sealed class MinecraftConnection : IAsyncDisposable
             return;
         }
 
+        if (Is(inbound, "cookie_request", packet.Id))
+        {
+            await HandleCookieRequestAsync(packet.Payload, protocol.PacketIds.PlayServerbound, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (Is(inbound, "store_cookie", packet.Id))
+        {
+            StoreCookie(packet.Payload);
+            return;
+        }
+
+        if (Is(inbound, "transfer", packet.Id))
+        {
+            HandleTransfer(packet.Payload);
+            return;
+        }
+
         if (Is(inbound, "position", packet.Id))
         {
             await HandlePositionAsync(packet.Payload, cancellationToken).ConfigureAwait(false);
@@ -741,7 +768,14 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
             }
             bool actionBar = reader.Remaining > 0 && reader.ReadBoolean();
-            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, actionBar, formatting));
+            Raise(ChatReceived, new ChatLine(
+                DateTimeOffset.Now,
+                formatting.Text,
+                actionBar,
+                formatting,
+                formatting.TranslationKey,
+                Kind: ChatMessageKind.System,
+                IsPrivateMessage: ChatTextCodec.IsPrivateMessageTranslationKey(formatting.TranslationKey)));
             return;
         }
 
@@ -752,7 +786,13 @@ public sealed class MinecraftConnection : IAsyncDisposable
                 lock (playersLock) return players.TryGetValue(uuid, out PlayerListEntry? player) ? player.Name : null;
             });
             FormattedChatText formatting = ChatTextCodec.ParseLegacy(decoded.Text);
-            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
+            Raise(ChatReceived, new ChatLine(
+                DateTimeOffset.Now,
+                formatting.Text,
+                Formatting: formatting,
+                SenderUuid: decoded.SenderUuid,
+                SenderName: decoded.SenderName,
+                Kind: ChatMessageKind.Player));
             return;
         }
 
@@ -768,7 +808,13 @@ public sealed class MinecraftConnection : IAsyncDisposable
             {
                 formatting = ChatTextCodec.ParseJson(reader.ReadString(262144));
             }
-            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
+            Raise(ChatReceived, new ChatLine(
+                DateTimeOffset.Now,
+                formatting.Text,
+                Formatting: formatting,
+                TranslationKey: formatting.TranslationKey,
+                Kind: ChatMessageKind.Profileless,
+                IsPrivateMessage: ChatTextCodec.IsPrivateMessageTranslationKey(formatting.TranslationKey)));
             return;
         }
 
@@ -777,8 +823,14 @@ public sealed class MinecraftConnection : IAsyncDisposable
             PacketReader reader = new(packet.Payload);
             string json = reader.ReadString(262144);
             FormattedChatText formatting = ChatTextCodec.ParseJson(json);
-            Raise(ChatReceived, new ChatLine(DateTimeOffset.Now, formatting.Text, Formatting: formatting));
-            if (ChatTextCodec.TranslationKeyFromJson(json)?.StartsWith("death.", StringComparison.Ordinal) == true)
+            Raise(ChatReceived, new ChatLine(
+                DateTimeOffset.Now,
+                formatting.Text,
+                Formatting: formatting,
+                TranslationKey: formatting.TranslationKey,
+                Kind: ChatMessageKind.Legacy,
+                IsPrivateMessage: ChatTextCodec.IsPrivateMessageTranslationKey(formatting.TranslationKey)));
+            if (formatting.TranslationKey?.StartsWith("death.", StringComparison.Ordinal) == true)
             {
                 Raise(Died, isCritical: true);
                 Raise(Log, "The player died; a respawn request can now be sent.", isCritical: true);
@@ -1007,6 +1059,67 @@ public sealed class MinecraftConnection : IAsyncDisposable
         if (reader.Remaining != 0)
             throw new InvalidDataException("The remove-resource-pack packet contains unexpected trailing data.");
         Raise(Log, "The server removed a resource-pack reference; this client had not downloaded any assets.");
+    }
+
+    private async Task HandleCookieRequestAsync(
+        byte[] payload,
+        Dictionary<string, int> responseIds,
+        CancellationToken cancellationToken)
+    {
+        PacketReader reader = new(payload);
+        string key = reader.ReadString(MaximumCookieKeyCharacters);
+        ValidateCookieKey(key);
+        if (reader.Remaining != 0) throw new InvalidDataException("The cookie request contains trailing data.");
+        int responseId = Require(responseIds, "cookie_response");
+        cookies.TryGetValue(key, out byte[]? value);
+        await packets!.WriteAsync(responseId, writer =>
+        {
+            writer.WriteString(key, MaximumCookieKeyCharacters);
+            writer.WriteBoolean(value is not null);
+            if (value is not null) writer.WriteVarIntPrefixedBytes(value);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal void StoreCookie(byte[] payload)
+    {
+        PacketReader reader = new(payload);
+        string key = reader.ReadString(MaximumCookieKeyCharacters);
+        ValidateCookieKey(key);
+        int length = reader.ReadVarInt();
+        if (length is < 0 or > MaximumCookieValueBytes)
+            throw new InvalidDataException("The cookie value exceeds its safety limit.");
+        byte[] value = reader.ReadBytes(length);
+        if (reader.Remaining != 0) throw new InvalidDataException("The cookie packet contains trailing data.");
+        if (!cookies.ContainsKey(key) && cookies.Count >= MaximumCookies)
+            throw new InvalidDataException("The server attempted to store too many cookies.");
+        if (cookies.Remove(key, out byte[]? previous)) CryptographicOperations.ZeroMemory(previous);
+        cookies[key] = value;
+    }
+
+    internal void HandleTransfer(byte[] payload)
+    {
+        PacketReader reader = new(payload);
+        string host = reader.ReadString(255);
+        int portValue = reader.ReadVarInt();
+        if (portValue is < 1 or > 65535 || reader.Remaining != 0 ||
+            host.Contains("://", StringComparison.Ordinal) || host.IndexOfAny(['/', '\\', '\r', '\n']) >= 0)
+            throw new InvalidDataException("The server transfer target is invalid.");
+        ServerAddress parsed = ServerAddress.Parse(host, portValue);
+        if (!AllowServerTransfer)
+        {
+            Raise(Log, $"Server transfer to {TerminalTextSanitizer.Sanitize(host)}:{portValue} was ignored because transfers are disabled.",
+                isCritical: true);
+            return;
+        }
+        throw new ServerTransferException(new ServerTransferRequest(parsed.HandshakeHost, parsed.Port));
+    }
+
+    private static void ValidateCookieKey(string key)
+    {
+        int colon = key.IndexOf(':');
+        if (colon is <= 0 || colon == key.Length - 1 || key.Any(character =>
+                !(char.IsAsciiLetterOrDigit(character) || character is '_' or '-' or '.' or '/' or ':')))
+            throw new InvalidDataException("The cookie key is not a valid resource location.");
     }
 
     private void BeginCodeOfConductDecision(string contents, CancellationToken cancellationToken)
@@ -1585,6 +1698,8 @@ public sealed class MinecraftConnection : IAsyncDisposable
         try { await metricsPublisherTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
         if (packets is not null) await packets.DisposeAsync().ConfigureAwait(false);
         await eventDispatcher.DisposeAsync().ConfigureAwait(false);
+        foreach (byte[] cookie in cookies.Values) CryptographicOperations.ZeroMemory(cookie);
+        cookies.Clear();
         metricsLifetime.Dispose();
         lifetime.Dispose();
     }

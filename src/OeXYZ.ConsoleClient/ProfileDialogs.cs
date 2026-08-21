@@ -1,5 +1,6 @@
 using OeXYZ.Core;
 using OeXYZ.Protocol;
+using System.Text.Json;
 
 namespace OeXYZ.ConsoleClient;
 
@@ -138,15 +139,21 @@ internal sealed class ServerDialog : Form
     private readonly CheckBox startupCommandsBox = new();
     private readonly NumericUpDown startupDelayBox = new();
     private readonly TextBox startupCommandsText = new();
+    private readonly ComboBox proxyBox = new();
+    private readonly CheckBox allowTransferBox = new();
+    private readonly TextBox failoverBox = new();
+    private readonly TextBox automationJsonBox = new();
     private readonly ServerProfile? existing;
+    private readonly IReadOnlyList<ProxyProfile> proxies;
 
-    public ServerDialog(ServerProfile? server)
+    public ServerDialog(ServerProfile? server, IReadOnlyList<ProxyProfile>? proxies = null)
     {
         existing = server;
+        this.proxies = proxies ?? [];
         Text = server is null ? "Add server" : "Edit server";
         ClientSize = new Size(500, 700);
         AutoScroll = true;
-        AutoScrollMinSize = new Size(480, 1110);
+        AutoScrollMinSize = new Size(480, 1510);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
@@ -201,6 +208,17 @@ internal sealed class ServerDialog : Form
         startupDelayBox.Increment = 500;
         ConfigureMultiline("Startup commands", startupCommandsText, 936, 78,
             "One per line, max 8; no repeat loop or automatic registration");
+        AddField("Proxy profile", proxyBox, 1050);
+        proxyBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        proxyBox.Items.Add(new ProxyChoice(null, "Direct connection"));
+        foreach (ProxyProfile proxy in this.proxies)
+            proxyBox.Items.Add(new ProxyChoice(proxy.Id, $"{proxy.DisplayName} ({proxy.Kind})"));
+        proxyBox.SelectedIndex = 0;
+        ConfigureCheckBox(allowTransferBox, "Allow validated server transfer (opt-in)", 1090);
+        ConfigureMultiline("Failover endpoints", failoverBox, 1130, 70,
+            "One host[:port] per line; first is preferred, maximum 8");
+        ConfigureMultiline("Automation rules (JSON)", automationJsonBox, 1230, 140,
+            "Bounded declarative rules only; validation rejects unsafe actions");
         afkBox.Checked = true;
         reconnectBox.Checked = true;
         respawnBox.Checked = true;
@@ -233,13 +251,22 @@ internal sealed class ServerDialog : Form
             startupCommandsBox.Checked = server.StartupCommandsEnabled;
             startupDelayBox.Value = Math.Clamp(server.StartupCommandDelayMilliseconds, 500, 30000);
             startupCommandsText.Text = string.Join(Environment.NewLine, server.StartupCommands);
+            proxyBox.SelectedItem = proxyBox.Items.Cast<ProxyChoice>()
+                .FirstOrDefault(item => item.Id == server.ProxyProfileId) ?? proxyBox.Items[0];
+            allowTransferBox.Checked = server.AllowServerTransfer;
+            failoverBox.Text = string.Join(Environment.NewLine, server.Endpoints.Select(endpoint =>
+                endpoint.CustomPort > 0 ? $"{endpoint.Address}:{endpoint.CustomPort}" : endpoint.Address));
+            automationJsonBox.Text = JsonSerializer.Serialize(server.Automations, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
         }
 
         Button save = Theme.Button("Save", 90);
-        save.Location = new Point(290, 1044);
+        save.Location = new Point(290, 1440);
         Theme.Primary(save);
         Button cancel = Theme.Button("Cancel", 90);
-        cancel.Location = new Point(388, 1044);
+        cancel.Location = new Point(388, 1440);
         cancel.DialogResult = DialogResult.Cancel;
         save.Click += SaveClicked;
         Controls.Add(save);
@@ -329,7 +356,7 @@ internal sealed class ServerDialog : Form
             if (reconnectMaximumBox.Value < reconnectInitialBox.Value)
                 throw new FormatException("The maximum reconnect delay cannot be shorter than the initial delay.");
             ServerProfile basis = existing ?? new ServerProfile { Id = Guid.NewGuid() };
-            Result = basis with
+            ServerProfile candidate = basis with
             {
                 DisplayName = name,
                 Address = address,
@@ -349,8 +376,31 @@ internal sealed class ServerDialog : Form
                 QuickCommands = ParseCommands(quickCommandsBox.Text, 12),
                 StartupCommandsEnabled = startupCommandsBox.Checked,
                 StartupCommandDelayMilliseconds = decimal.ToInt32(startupDelayBox.Value),
-                StartupCommands = ParseCommands(startupCommandsText.Text, 8, rejectSensitive: true)
+                StartupCommands = ParseCommands(startupCommandsText.Text, 8, rejectSensitive: true),
+                ProxyProfileId = (proxyBox.SelectedItem as ProxyChoice)?.Id,
+                AllowServerTransfer = allowTransferBox.Checked,
+                Endpoints = ParseEndpoints(failoverBox.Text, address, decimal.ToInt32(portBox.Value)),
+                Automations = ParseAutomations(automationJsonBox.Text)
             };
+            if (!basis.AllowServerTransfer && candidate.AllowServerTransfer &&
+                BrandMessageBox.Show(this,
+                    "Server transfer lets this profile follow a validated server-selected host. " +
+                    "Proxy, loop, and rate limits still apply. Enable it?",
+                    "Enable server transfer", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+            if (!basis.Automations.Any(rule => rule.Enabled) && candidate.Automations.Any(rule => rule.Enabled) &&
+                BrandMessageBox.Show(this,
+                    "Enabled automation rules may send bounded chat or Minecraft commands while connected. " +
+                    "Review the JSON and enable them?",
+                    "Enable automations", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+            Result = new ProfileDocument
+            {
+                Servers = [candidate],
+                ProxyProfiles = proxies.ToList()
+            }.Normalize().Servers.Single();
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -371,6 +421,45 @@ internal sealed class ServerDialog : Form
         if (rejectSensitive && commands.Any(SensitiveDataRedactor.IsSensitiveCommand))
             throw new FormatException("Login, registration and password commands cannot run automatically. Send them manually instead.");
         return commands;
+    }
+
+    private static List<ServerEndpointProfile> ParseEndpoints(string text, string fallbackAddress, int fallbackPort)
+    {
+        string[] values = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (values.Length == 0) return [new ServerEndpointProfile { Address = fallbackAddress, CustomPort = fallbackPort }];
+        if (values.Length > 8) throw new FormatException("At most 8 failover endpoints are supported.");
+        return values.Select((value, index) =>
+        {
+            ServerAddress parsed = ServerAddress.Parse(value);
+            return new ServerEndpointProfile
+            {
+                Address = parsed.HandshakeHost,
+                CustomPort = parsed.HasExplicitPort ? parsed.Port : 0,
+                Priority = index
+            };
+        }).ToList();
+    }
+
+    private static List<AutomationRuleProfile> ParseAutomations(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<AutomationRuleProfile>>(text, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                MaxDepth = 32
+            }) ?? [];
+        }
+        catch (JsonException exception)
+        {
+            throw new FormatException("Automation JSON is invalid.", exception);
+        }
+    }
+
+    private sealed record ProxyChoice(Guid? Id, string Name)
+    {
+        public override string ToString() => Name;
     }
 }
 
@@ -410,12 +499,13 @@ internal sealed class SettingsDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 14,
+            RowCount = 15,
             Padding = new Padding(24, 20, 24, 18),
             BackColor = Theme.Background
         };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         for (int index = 1; index < 12; index++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
@@ -458,6 +548,16 @@ internal sealed class SettingsDialog : Form
         retentionRow.Controls.Add(retention);
         layout.Controls.Add(retentionRow, 0, 11);
 
+        Label managementStatus = new()
+        {
+            Dock = DockStyle.Fill,
+            Text = "Management API: inactive in the desktop GUI · " +
+                   (File.Exists(AppPaths.ControlToken) ? "private control-token file present" : "no control-token file"),
+            ForeColor = Theme.Muted,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        layout.Controls.Add(managementStatus, 0, 12);
+
         Label explanation = new()
         {
             Dock = DockStyle.Fill,
@@ -467,7 +567,7 @@ internal sealed class SettingsDialog : Form
                    "Exit from the tray menu always shuts down sessions cleanly.",
             ForeColor = Theme.Muted
         };
-        layout.Controls.Add(explanation, 0, 12);
+        layout.Controls.Add(explanation, 0, 13);
 
         FlowLayoutPanel actions = new()
         {
@@ -483,7 +583,7 @@ internal sealed class SettingsDialog : Form
         save.Click += (_, _) => Save();
         actions.Controls.Add(cancel);
         actions.Controls.Add(save);
-        layout.Controls.Add(actions, 0, 13);
+        layout.Controls.Add(actions, 0, 14);
         Controls.Add(layout);
         AcceptButton = save;
         CancelButton = cancel;
