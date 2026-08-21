@@ -158,9 +158,10 @@ internal sealed class TerminalDashboard : IAsyncDisposable
             string lastPacket = session.LastPacketAt is DateTimeOffset received
                 ? $"last packet {Math.Max(0, (int)(DateTimeOffset.UtcNow - received).TotalSeconds)}s ago"
                 : "no packet received";
+            string drops = $"drop E{session.DroppedEvents}/L{session.DroppedLogLines}/S{session.SubscriberFailures}";
             lines.Add(Fit(
                 $"  {position} | RX {FormatBytes(session.BytesReceived)} / {session.PacketsReceived} packets | " +
-                $"TX {FormatBytes(session.BytesSent)} / {session.PacketsSent} packets | {lastPacket}",
+                $"TX {FormatBytes(session.BytesSent)} / {session.PacketsSent} packets | {drops} | {lastPacket}",
                 width - 1));
         }
         if (snapshot.Sessions.Count == 0 && contentBudget > 0) lines.Add("No sessions registered.");

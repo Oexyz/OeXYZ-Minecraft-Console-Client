@@ -18,7 +18,7 @@ SHA-256, and atomically installs `~/.local/bin/oexyz`. For a pinned and manually
 reviewed installation, use the release tag and optional GitHub attestation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Oexyz/OeXYZ-Minecraft-Console-Client/v1.3.1/install.sh | sh -s -- --version 1.3.1 --verify-attestation
+curl -fsSL https://raw.githubusercontent.com/Oexyz/OeXYZ-Minecraft-Console-Client/v1.4.0/install.sh | sh -s -- --version 1.4.0 --verify-attestation
 ```
 
 `--verify-attestation` requires a configured GitHub CLI. SHA-256 verification
@@ -30,11 +30,11 @@ Extract the archive matching the machine:
 
 | Platform | Archive |
 |---|---|
-| Intel/AMD 64-bit Linux | `OeXYZ-Minecraft-Console-Client-v1.3.1-linux-x64.tar.gz` |
-| ARM64 Linux / Raspberry Pi OS 64-bit | `OeXYZ-Minecraft-Console-Client-v1.3.1-linux-arm64.tar.gz` |
+| Intel/AMD 64-bit Linux | `OeXYZ-Minecraft-Console-Client-v1.4.0-linux-x64.tar.gz` |
+| ARM64 Linux / Raspberry Pi OS 64-bit | `OeXYZ-Minecraft-Console-Client-v1.4.0-linux-arm64.tar.gz` |
 
 ```bash
-tar -xzf OeXYZ-Minecraft-Console-Client-v1.3.1-linux-x64.tar.gz
+tar -xzf OeXYZ-Minecraft-Console-Client-v1.4.0-linux-x64.tar.gz
 chmod 755 oexyz
 ./oexyz --help
 ./oexyz install-path

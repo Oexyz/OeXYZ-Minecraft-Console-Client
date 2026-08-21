@@ -59,7 +59,10 @@ public sealed record ConnectionMetrics(
     long BytesSent,
     long PacketsReceived,
     long PacketsSent,
-    int? PingMilliseconds)
+    int? PingMilliseconds,
+    long DroppedEvents = 0,
+    long SubscriberFailures = 0,
+    long OutboundRejections = 0)
 {
     public TimeSpan Uptime(DateTimeOffset now) => ConnectedAt is null ? TimeSpan.Zero : now - ConnectedAt.Value;
 }

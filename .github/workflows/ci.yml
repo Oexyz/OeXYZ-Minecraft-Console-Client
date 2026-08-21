@@ -74,6 +74,10 @@ jobs:
           $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath protocol-compatibility.txt
           $knownRequests = @('UrlHash','UrlHashForcedPrompt','UuidUrlHashForcedPrompt')
           $knownResponses = @('HashAndStatus','StatusOnly','UuidAndStatus')
+          $knownPositions = @('LegacyCoordinates','TeleportId','TeleportIdWithDismount','RelativeVelocity')
+          $knownSettings = @('LegacyFiveFields','MainHand','DisableTextFiltering','EnableTextFilteringAndListing','ParticleStatus')
+          $knownChat = @('Legacy','Signed','SignedSession')
+          $knownPlayerInfo = @('LegacyAction','ModernBitSet')
           foreach ($version in $catalog.versions) {
             if ($version.resourcePackRequestLayout -notin $knownRequests) {
               throw "Unknown resource-pack request layout for $($version.minecraftVersion): $($version.resourcePackRequestLayout)"
@@ -85,6 +89,15 @@ jobs:
               @($version.packetIds.configurationServerbound.PSObject.Properties.Name)
             if ('resource_pack_receive' -notin $serverbound) {
               throw "Resource-pack response mapping missing for $($version.minecraftVersion)."
+            }
+            if ($version.capabilities.positionLayout -notin $knownPositions -or
+                $version.capabilities.clientSettingsLayout -notin $knownSettings -or
+                $version.capabilities.chatLayout -notin $knownChat -or
+                $version.capabilities.playerInfoLayout -notin $knownPlayerInfo) {
+              throw "Unknown headless-session capability layout for $($version.minecraftVersion)."
+            }
+            if ([bool]$version.capabilities.configuration -ne [bool]$version.hasConfiguration) {
+              throw "Configuration capability mismatch for $($version.minecraftVersion)."
             }
           }
           if ($rows[-1].Missing) { throw "Newest protocol lacks critical mappings: $($rows[-1].Missing)" }
@@ -212,7 +225,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --output type=oci,dest=/tmp/oexyz-multiarch.oci \
-            --build-arg VERSION=1.3.1-dev \
+            --build-arg VERSION=1.4.0-dev \
             --build-arg SOURCE_COMMIT="${{ github.sha }}" .
 
       - name: Upload Linux CI publish

@@ -84,6 +84,57 @@ function classifyResourcePackResponse (data, packetIds) {
   return [...layouts][0] ?? 'None'
 }
 
+function classifyNamedLayout (data, state, direction, packetNames, layouts, description) {
+  const mapping = mappingFor(data, state, direction)
+  const packetName = packetNames.find(name => Object.hasOwn(mapping, name))
+  if (!packetName) return 'None'
+  const names = containerFieldNames(packetSchema(data, state, direction, packetName))
+  const signature = JSON.stringify(names)
+  const layout = layouts[signature]
+  if (!layout) throw new Error(`Unknown ${description} layout for ${packetName}: ${signature}`)
+  return layout
+}
+
+function capabilitiesFor (data, packetIds) {
+  const positionLayout = classifyNamedLayout(data, 'play', 'toClient', ['position'], {
+    [JSON.stringify(['x', 'y', 'z', 'yaw', 'pitch', 'flags'])]: 'LegacyCoordinates',
+    [JSON.stringify(['x', 'y', 'z', 'yaw', 'pitch', 'flags', 'teleportId'])]: 'TeleportId',
+    [JSON.stringify(['x', 'y', 'z', 'yaw', 'pitch', 'flags', 'teleportId', 'dismountVehicle'])]: 'TeleportIdWithDismount',
+    [JSON.stringify(['teleportId', 'x', 'y', 'z', 'dx', 'dy', 'dz', 'yaw', 'pitch', 'flags'])]: 'RelativeVelocity'
+  }, 'position')
+  const clientSettingsLayout = classifyNamedLayout(data, 'play', 'toServer', ['client_information', 'settings'], {
+    [JSON.stringify(['locale', 'viewDistance', 'chatFlags', 'chatColors', 'skinParts'])]: 'LegacyFiveFields',
+    [JSON.stringify(['locale', 'viewDistance', 'chatFlags', 'chatColors', 'skinParts', 'mainHand'])]: 'MainHand',
+    [JSON.stringify(['locale', 'viewDistance', 'chatFlags', 'chatColors', 'skinParts', 'mainHand', 'disableTextFiltering'])]: 'DisableTextFiltering',
+    [JSON.stringify(['locale', 'viewDistance', 'chatFlags', 'chatColors', 'skinParts', 'mainHand', 'enableTextFiltering', 'enableServerListing'])]: 'EnableTextFilteringAndListing',
+    [JSON.stringify(['locale', 'viewDistance', 'chatFlags', 'chatColors', 'skinParts', 'mainHand', 'enableTextFiltering', 'enableServerListing', 'particleStatus'])]: 'ParticleStatus'
+  }, 'client settings')
+  const chatLayout = Object.hasOwn(packetIds.playServerbound, 'chat_session_update')
+    ? 'SignedSession'
+    : Object.hasOwn(packetIds.playServerbound, 'chat_message') ? 'Signed' : 'Legacy'
+  const playerPacketName = Object.hasOwn(packetIds.playClientbound, 'player_info_update')
+    ? 'player_info_update'
+    : Object.hasOwn(packetIds.playClientbound, 'player_info') ? 'player_info' : null
+  const playerSchema = playerPacketName ? packetSchema(data, 'play', 'toClient', playerPacketName) : null
+  const playerAction = Array.isArray(playerSchema?.[1])
+    ? playerSchema[1].find(field => field?.name === 'action')?.type
+    : null
+  const playerInfoLayout = !playerPacketName
+    ? 'None'
+    : Array.isArray(playerAction) && playerAction[0] === 'bitflags' ? 'ModernBitSet' : 'LegacyAction'
+  return {
+    positionLayout,
+    clientSettingsLayout,
+    chatLayout,
+    playerInfoLayout,
+    cookies: Object.hasOwn(packetIds.loginClientbound, 'cookie_request') ||
+      Object.hasOwn(packetIds.configurationClientbound, 'cookie_request'),
+    transfer: Object.hasOwn(packetIds.configurationClientbound, 'transfer'),
+    configuration: Boolean(data.protocol.configuration),
+    codeOfConduct: Object.hasOwn(packetIds.configurationClientbound, 'code_of_conduct')
+  }
+}
+
 function schemaFor (entry) {
   const candidates = [entry.minecraftVersion, entry.majorVersion]
   if (entry.minecraftVersion === '26.2') candidates.push('26.1')
@@ -114,6 +165,7 @@ for (const entry of releases) {
   }
   const resourcePackRequestLayout = classifyResourcePackRequest(data, packetIds)
   const resourcePackResponseLayout = classifyResourcePackResponse(data, packetIds)
+  const capabilities = capabilitiesFor(data, packetIds)
   if (resourcePackRequestLayout !== 'None' && resourcePackResponseLayout === 'None') {
     throw new Error(`Minecraft ${entry.minecraftVersion} has a resource-pack request but no response packet`)
   }
@@ -124,6 +176,7 @@ for (const entry of releases) {
     hasConfiguration: Boolean(data.protocol.configuration),
     resourcePackRequestLayout,
     resourcePackResponseLayout,
+    capabilities,
     packetIds
   })
 }

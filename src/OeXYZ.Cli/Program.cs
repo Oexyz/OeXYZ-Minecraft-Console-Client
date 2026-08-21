@@ -47,6 +47,8 @@ internal static class CliApplication
             ProfileRepository repository = new(paths.Profiles);
             if (options.Command == "doctor")
                 return await RunDoctorAsync(repository, paths, options).ConfigureAwait(false);
+            if (options.Command == "profiles-recover")
+                return RecoverProfiles(repository, options.JsonOutput);
             ProfileDocument profiles = repository.Load();
             return options.Command switch
             {
@@ -66,6 +68,12 @@ internal static class CliApplication
                 "supervise" => await RunManyAsync(profiles, repository, paths, options, options.Target).ConfigureAwait(false),
                 _ => UnknownCommand(options.Command)
             };
+        }
+        catch (ProfileRecoveryAvailableException exception)
+        {
+            await ErrorAsync(SensitiveDataRedactor.RedactText(exception.Message +
+                " Run 'oexyz profiles-recover' to restore it explicitly.")).ConfigureAwait(false);
+            return OeXYZExitCode.InvalidArguments;
         }
         catch (FileNotFoundException exception)
         {
@@ -206,6 +214,31 @@ internal static class CliApplication
             throw new ArgumentException("The portable export must not overwrite the active profile file.");
         ProfileTransferService.Export(profiles, path);
         WriteOutput($"Exported {profiles.Accounts.Count} accounts and {profiles.Servers.Count} servers without tokens or Microsoft identifiers to {path}");
+        return OeXYZExitCode.Success;
+    }
+
+    private static OeXYZExitCode RecoverProfiles(ProfileRepository repository, bool jsonOutput)
+    {
+        ProfileRecoveryState state = repository.InspectRecovery();
+        if (!state.CanRestore)
+            throw new InvalidDataException("A valid profiles.json.bak is not available for recovery.");
+        ProfileRecoveryResult result = repository.RestoreBackup();
+        if (jsonOutput)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                recovered = true,
+                revision = result.Document.Revision,
+                corruptFilePreserved = result.PreservedCorruptPath is not null,
+                preservedCorruptPath = result.PreservedCorruptPath
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+        }
+        else
+        {
+            WriteOutput(result.PreservedCorruptPath is null
+                ? "Restored profiles.json from its validated backup."
+                : $"Restored profiles.json from its validated backup; preserved the corrupt file at {result.PreservedCorruptPath}");
+        }
         return OeXYZExitCode.Success;
     }
 
@@ -1193,6 +1226,7 @@ internal static class CliApplication
               oexyz healthcheck [http://127.0.0.1:8765/health]
               oexyz export-profiles <portable.json>
               oexyz import-profiles <portable.json>
+              oexyz profiles-recover [--json]
               oexyz account-add-offline <player-name>
               oexyz account-add-microsoft <profile-name> [--login-hint <email>]
               oexyz account-login <profile-name> [--account-key-file <path>]

@@ -374,6 +374,36 @@ internal sealed class MainForm : Form
     private ProfileDocument LoadProfiles()
     {
         try { return repository.Load(); }
+        catch (ProfileRecoveryAvailableException exception)
+        {
+            DialogResult choice = BrandMessageBox.Show(
+                exception.Message + Environment.NewLine + Environment.NewLine +
+                "Restore the validated backup now? The corrupt file will be preserved separately.",
+                "Profile recovery available",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (choice == DialogResult.Yes)
+            {
+                try
+                {
+                    ProfileRecoveryResult recovered = repository.RestoreBackup();
+                    BrandMessageBox.Show(
+                        recovered.PreservedCorruptPath is null
+                            ? "Profiles were restored from the validated backup."
+                            : $"Profiles were restored. The corrupt file was preserved at:{Environment.NewLine}{recovered.PreservedCorruptPath}",
+                        "Profiles restored",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return recovered.Document;
+                }
+                catch (Exception recoveryException)
+                {
+                    BrandMessageBox.Show(recoveryException.Message, "Profile recovery failed",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            return new ProfileDocument();
+        }
         catch (Exception exception)
         {
             BrandMessageBox.Show(exception.Message, "OeXYZ Console Client", MessageBoxButtons.OK, MessageBoxIcon.Warning);

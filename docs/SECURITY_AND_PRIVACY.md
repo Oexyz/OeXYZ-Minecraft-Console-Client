@@ -114,6 +114,12 @@ so later service starts can authenticate silently without storing a password.
   recognized OAuth interaction states can permit an interactive flow during an
   explicitly user-started connection; filesystem, decryption, and integrity
   failures remain operational errors.
+- Packet writes and event callbacks use bounded queues. Event/subscriber/drop
+  diagnostics are aggregate counters only; they never retain packet payloads,
+  authentication material, or chat text.
+- Profile backup recovery is always explicit. OeXYZ validates primary and
+  backup independently, preserves a corrupt primary, restores atomically under
+  the profile lock, and never treats an invalid backup as usable.
 - SHA-256 checks detect release corruption or mismatched assets but do not
   replace trust in the official GitHub repository and its owners. Release
   builds pin that repository and ignore repository overrides supplied through

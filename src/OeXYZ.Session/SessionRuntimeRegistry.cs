@@ -24,7 +24,12 @@ public sealed record RuntimeSessionStatus(
     long PacketsReceived,
     long PacketsSent,
     int ReconnectCount,
-    DateTimeOffset? LastPacketAt);
+    DateTimeOffset? LastPacketAt,
+    long DroppedEvents = 0,
+    long DroppedLogLines = 0,
+    long SubscriberFailures = 0,
+    long OutboundRejections = 0,
+    long UnknownPacketOverflow = 0);
 
 public sealed record RuntimeHealthSnapshot(
     DateTimeOffset Timestamp,
@@ -121,7 +126,12 @@ public sealed class SessionRuntimeRegistry
             snapshot.Metrics.PacketsReceived,
             snapshot.Metrics.PacketsSent,
             snapshot.ReconnectCount,
-            snapshot.Metrics.LastReceivedAt);
+            snapshot.Metrics.LastReceivedAt,
+            snapshot.DroppedEvents,
+            snapshot.DroppedLogLines,
+            snapshot.SubscriberFailures,
+            snapshot.OutboundRejections,
+            snapshot.UnknownPacketOverflow);
     }
 
     private double SampleCpu(TimeSpan totalProcessorTime)

@@ -9,6 +9,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
     private Stream readStream;
     private Stream writeStream;
     private readonly SemaphoreSlim writeLock = new(1, 1);
+    private readonly OutboundPacketDispatcher outbound;
     private int compressionThreshold = -1;
 
     public event Action<int, int, int>? PacketWritten;
@@ -18,6 +19,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
         this.stream = stream;
         readStream = stream;
         writeStream = stream;
+        outbound = new OutboundPacketDispatcher(this);
     }
 
     public void EnableCompression(int threshold)
@@ -95,7 +97,17 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
         return new InboundPacket(packetId, packetReader.ReadRemaining().ToArray(), prefixBytes + frameLength);
     }
 
-    public async ValueTask WriteAsync(int packetId, Action<PacketWriter>? writePayload, CancellationToken cancellationToken)
+    public ValueTask WriteAsync(
+        int packetId,
+        Action<PacketWriter>? writePayload,
+        CancellationToken cancellationToken,
+        OutboundPacketPriority priority = OutboundPacketPriority.Critical) =>
+        outbound.SendAsync(packetId, writePayload, cancellationToken, priority);
+
+    internal async ValueTask WriteDirectAsync(
+        int packetId,
+        Action<PacketWriter>? writePayload,
+        CancellationToken cancellationToken)
     {
         PacketWriter packet = new();
         packet.WriteVarInt(packetId);
@@ -161,6 +173,7 @@ internal sealed class MinecraftPacketStream : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await outbound.DisposeAsync().ConfigureAwait(false);
         writeLock.Dispose();
         if (!ReferenceEquals(readStream, stream))
             await readStream.DisposeAsync().ConfigureAwait(false);

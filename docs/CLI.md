@@ -27,6 +27,7 @@ oexyz supervise [group] [--account <name>] [--no-input]
 oexyz healthcheck [http://127.0.0.1:8765/health]
 oexyz export-profiles <portable.json>
 oexyz import-profiles <portable.json>
+oexyz profiles-recover [--json]
 oexyz install-path
 oexyz uninstall-path
 ```
@@ -117,6 +118,15 @@ the account-store key are not accepted as general environment variables.
 Active session logs rotate at 16 MiB per part. CLI files rotate at 32 MiB, and
 the complete log tree is capped at 300 MiB by deleting the oldest closed log
 parts. The current live log is protected.
+
+If `profiles.json` is corrupt and `profiles.json.bak` validates independently,
+normal commands report that recovery is available. `profiles-recover` is the
+only CLI action that restores it. The corrupt primary is retained under a
+unique `.corrupt-*` name, the restore is atomic and locked, and `--json`
+reports only recovery metadata, never profile or account contents.
+
+The dashboard and `/status` include aggregate dropped-event, dropped-log,
+subscriber-failure, outbound-rejection, and unknown-packet-overflow counters.
 
 ## PATH installation
 

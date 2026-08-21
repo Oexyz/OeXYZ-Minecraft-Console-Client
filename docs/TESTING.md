@@ -329,6 +329,48 @@ keepalive handling, DNS UDP-source/TCP fallback validation, compression edge
 cases, silent-only reconnect selection, certificate replacement, bounded
 unknown-packet overflow, and transaction-exact updater rollback.
 
+## v1.4.0 transport and diagnostics verification
+
+The v1.4.0 transport-complete `linux-x64` and `linux-arm64` single-file
+publishes were run natively against the isolated Vanilla 26.2 offline servers.
+Five independent x64 processes and one ARM64 process ran concurrently for 620 seconds. All six
+reached Play, handled the optional UUID Resource Pack decline, received
+position/health/player-list data, and sent periodic Anti-AFK position updates
+through the ordered outbound dispatcher.
+
+At roughly four minutes both controlled servers were stopped. Each client
+recorded exactly one intentional disconnect, applied bounded backoff, and
+reached Play again after restart. No rapid loop, authentication attempt,
+subscriber failure, dropped event/log, outbound rejection, or unknown-packet
+overflow was observed. A v1.4 supervisor additionally served real `/health`,
+`/ready`, and `/status`; the status response exposed the new aggregate counters
+with zero values under the real session load.
+
+Initial RSS was approximately 60â€“75 MiB per process. After reconnect and JIT
+activity, final observed RSS was approximately 87â€“93 MiB on x64 and 82 MiB on
+ARM64; it did not exhibit a rapid monotonic queue-driven increase. Average CPU
+declined after startup. All clients exited under the 620-second SIGTERM bound,
+and targeted secret scans of every generated `.log` file returned no matches.
+
+| Release | Host | Architecture | Mode | Server class | MC version | Protocol | Duration | Parallel sessions | Result |
+|---|---|---|---|---|---:|---:|---:|---:|---|
+| 1.4.0 | `media-server` | linux-x64 (`x86_64`) | Offline | local Vanilla server | 26.2 | 776 | 620 s | 5 | PASS |
+| 1.4.0 | `arm` | linux-arm64 (`aarch64`) | Offline | local Vanilla server | 26.2 | 776 | 620 s | 1 | PASS |
+
+The exact final code also passed deterministic concurrent outbound ordering,
+critical-packet priority, bounded event saturation, slow/throwing subscriber
+isolation, five-Hz metrics coalescing, status Ping/Pong fallback, capability
+catalog validation, and explicit profile-recovery tests. Premium verification
+remained blocked because neither host had a stored OeXYZ account; Docker
+execution remained unavailable for the same permission/daemon reasons recorded
+for v1.3.1.
+
+After the final missing-primary profile-recovery edge fix, both artifacts were
+republished, recopied, and SHA-256 matched locally/remotely. Those exact final
+hashes each completed an additional 65-second Play/Anti-AFK/SIGTERM smoke with
+exit 0; the recovery-only change did not alter the transport implementation
+covered by the 620-second run.
+
 ## Manual release smoke test
 
 Before publishing a tag:

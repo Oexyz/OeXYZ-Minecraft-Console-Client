@@ -5,6 +5,45 @@ use semantic versioning.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-21
+
+### Added
+
+- A bounded, two-priority outbound dispatcher with one transport writer,
+  per-request completion, normal-packet backpressure, critical-control
+  priority, and fair critical bursts.
+- Bounded protocol event dispatch with per-subscriber exception isolation,
+  drop accounting, and coalesced five-per-second metrics publication.
+- Explicit `profiles-recover` CLI recovery and a GUI recovery prompt that
+  validate `profiles.json.bak`, preserve the corrupt primary, and restore under
+  the existing interprocess lock.
+- Generated protocol capabilities for position, client settings, chat,
+  player-info, cookies, transfer, Configuration, and code of conduct.
+- Drop/subscriber/unknown-overflow diagnostics in session snapshots, runtime
+  status, support packages, CLI dashboards, and the GUI inspector.
+
+### Changed
+
+- Packet payload builders now run only on the single outbound writer, keeping
+  secure-chat indexes and wire order identical during concurrent sends.
+- Network callbacks are delivered outside receive/write paths; one slow or
+  throwing UI/log subscriber cannot terminate or stall a connection.
+- Server metrics are coalesced instead of cloning a snapshot per packet, while
+  state transitions and the final shutdown snapshot remain immediate.
+- Status discovery tolerates malformed optional fields, clamps negative player
+  counts, applies JSON size/depth limits, validates icons, performs a real
+  status Ping/Pong, and falls back to handshake RTT only when older servers
+  close after their JSON response.
+- Position and client-settings decoding/encoding use generated schema
+  capabilities instead of scattered protocol thresholds.
+
+### Security
+
+- Event, log, unknown-packet, and outbound structures remain bounded and expose
+  aggregate counters without retaining packet payloads or chat text.
+- Profile recovery never silently overwrites a corrupt primary, never restores
+  an invalid backup, and keeps recovered/corrupt files private on Unix.
+
 ## [1.3.1] - 2026-08-21
 
 ### Fixed

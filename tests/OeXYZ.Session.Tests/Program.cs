@@ -41,6 +41,7 @@ try
     True(archive.GetEntry("environment.json") is not null, "Environment report is missing.");
     True(archive.GetEntry("server-profile.json") is not null, "Sanitized server profile is missing.");
     True(archive.GetEntry("unknown-packets.json") is not null, "Unknown packet report is missing.");
+    True(archive.GetEntry("diagnostic-counters.json") is not null, "Diagnostic counter report is missing.");
     True(!combined.Contains("super-secret-token", StringComparison.Ordinal), "Access token leaked into support package.");
     True(!combined.Contains("secret-password", StringComparison.Ordinal), "Login password leaked into support package.");
     True(!combined.Contains("do-not-include-this", StringComparison.Ordinal), "Startup command secret leaked into support package.");
@@ -269,9 +270,12 @@ try
         new ServerProfile { DisplayName = "Flood", Address = "127.0.0.1", Version = "26.2" },
         new OfflineIdentityProvider(),
         () => { },
-        floodRoot);
+        floodRoot,
+        enablePacketInspection: false,
+        logWriterFactory: (_, _) => throw new IOException("Injected stalled log sink."));
     bool emittedUnsafeText = false;
     int longestEmittedText = 0;
+    int healthySubscriberCalls = 0;
     object observedLock = new();
     floodSession.LineAdded += line =>
     {
@@ -282,6 +286,8 @@ try
                                  line.Text.Contains("super-secret-token", StringComparison.Ordinal);
         }
     };
+    floodSession.LineAdded += _ => throw new InvalidOperationException("Injected session subscriber failure.");
+    floodSession.LineAdded += _ => Interlocked.Increment(ref healthySubscriberCalls);
 
     string hostile = "access_token=super-secret-token \u001b[31m\u0007" + new string('X', 20_000);
     FormattedChatText hugeFormatting = new(
@@ -336,6 +342,12 @@ try
             "A ConsoleSession event emitted an oversized line.");
         True(!emittedUnsafeText, "A ConsoleSession event emitted terminal controls or remote secrets.");
     }
+    True(Volatile.Read(ref healthySubscriberCalls) > 0,
+        "A failing session subscriber prevented later subscribers from running.");
+    True(floodSession.Snapshot.SubscriberFailures > 0,
+        "Session subscriber failures were not exposed in diagnostics.");
+    True(floodSession.Snapshot.DroppedLogLines > 0,
+        "A saturated bounded log queue did not expose dropped-line diagnostics.");
 
     await floodSession.DisposeAsync();
     string[] persistedLogLines = Directory.EnumerateFiles(floodRoot, "*.log")

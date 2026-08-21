@@ -54,7 +54,12 @@ public sealed record SessionSnapshot(
     int ReconnectCount,
     DateTimeOffset? NextReconnectAt,
     IReadOnlyList<PlayerListEntry> Players,
-    bool IsConnected);
+    bool IsConnected,
+    long DroppedEvents = 0,
+    long DroppedLogLines = 0,
+    long SubscriberFailures = 0,
+    long OutboundRejections = 0,
+    long UnknownPacketOverflow = 0);
 
 public sealed class ConsoleSession : IAsyncDisposable
 {
@@ -79,7 +84,7 @@ public sealed class ConsoleSession : IAsyncDisposable
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.Wait
         });
     private readonly Task logTask;
     private readonly Queue<string> recentDiagnostics = new();
@@ -102,6 +107,8 @@ public sealed class ConsoleSession : IAsyncDisposable
     private int respawnPending;
     private int dead;
     private int stopping;
+    private long droppedLogLines;
+    private long subscriberFailures;
     private Exception? terminalException;
     private Exception? logException;
 
@@ -283,7 +290,7 @@ public sealed class ConsoleSession : IAsyncDisposable
                     }
                     connectedBefore = true;
                     RecordConnectionEstablished();
-                    ConnectedChanged?.Invoke(true);
+                    Raise(ConnectedChanged, true);
                     SetStatus("CONNECTED", SessionLineKind.Success);
                     Add(SessionLineKind.Success, SessionLineCategory.Connection,
                         $"Connected without a game renderer using protocol {protocol.ProtocolVersion}.");
@@ -315,7 +322,7 @@ public sealed class ConsoleSession : IAsyncDisposable
                 finally
                 {
                     connection = null;
-                    ConnectedChanged?.Invoke(false);
+                    Raise(ConnectedChanged, false);
                     PublishSnapshot();
                 }
 
@@ -385,7 +392,7 @@ public sealed class ConsoleSession : IAsyncDisposable
                 Volatile.Read(ref stopping) != 0 || cancellationToken.IsCancellationRequested
                     ? SessionLineKind.Information
                     : SessionLineKind.Error);
-            ConnectedChanged?.Invoke(false);
+            Raise(ConnectedChanged, false);
         }
     }
 
@@ -478,7 +485,7 @@ public sealed class ConsoleSession : IAsyncDisposable
         };
         if (PacketInspectionEnabled) active.PacketTraced += trace =>
         {
-            PacketTraced?.Invoke(trace);
+            Raise(PacketTraced, trace);
         };
     }
 
@@ -632,8 +639,8 @@ public sealed class ConsoleSession : IAsyncDisposable
         SessionLine? line = SessionLinePolicy.Create(DateTimeOffset.Now, kind, category, text, formatting);
         if (line is null) return null;
         RecordDiagnostic(line);
-        logLines.Writer.TryWrite(line);
-        LineAdded?.Invoke(line);
+        if (!logLines.Writer.TryWrite(line)) Interlocked.Increment(ref droppedLogLines);
+        Raise(LineAdded, line);
         return line;
     }
 
@@ -681,7 +688,7 @@ public sealed class ConsoleSession : IAsyncDisposable
             $"Session logging stopped for '{Title}': {FriendlyError(exception)}");
         if (line is null) return;
         RecordDiagnostic(line);
-        LineAdded?.Invoke(line);
+        Raise(LineAdded, line);
         Notify(SessionNotificationKind.Error, "Session logging stopped", line.Text);
     }
 
@@ -739,11 +746,11 @@ public sealed class ConsoleSession : IAsyncDisposable
             currentStatus = text;
             currentStatusKind = kind;
         }
-        StatusChanged?.Invoke(text, kind);
+        Raise(StatusChanged, text, kind);
         PublishSnapshot();
     }
 
-    private void PublishSnapshot() => SnapshotChanged?.Invoke(Snapshot);
+    private void PublishSnapshot() => Raise(SnapshotChanged, Snapshot);
 
     private SessionSnapshot CreateSnapshotLocked() => new(
         currentStatus,
@@ -759,13 +766,53 @@ public sealed class ConsoleSession : IAsyncDisposable
         Volatile.Read(ref reconnectCount),
         nextReconnectAt,
         players,
-        connection?.State == ConnectionState.Play);
+        connection?.State == ConnectionState.Play,
+        metrics.DroppedEvents,
+        Interlocked.Read(ref droppedLogLines),
+        metrics.SubscriberFailures + Interlocked.Read(ref subscriberFailures),
+        metrics.OutboundRejections,
+        GetUnknownPacketOverflow());
 
     private void Notify(SessionNotificationKind kind, string title, string message) =>
-        NotificationRequested?.Invoke(new SessionNotification(
+        Raise(NotificationRequested, new SessionNotification(
             kind,
             SessionLinePolicy.NormalizeText(title),
             SessionLinePolicy.NormalizeText(message)));
+
+    private long GetUnknownPacketOverflow()
+    {
+        lock (unknownPacketsLock) return unknownPacketStatistics.GetValueOrDefault("overflow");
+    }
+
+    private void Raise(Action? handlers)
+    {
+        if (handlers is null) return;
+        foreach (Delegate subscriber in handlers.GetInvocationList())
+        {
+            try { ((Action)subscriber)(); }
+            catch { Interlocked.Increment(ref subscriberFailures); }
+        }
+    }
+
+    private void Raise<T>(Action<T>? handlers, T value)
+    {
+        if (handlers is null) return;
+        foreach (Delegate subscriber in handlers.GetInvocationList())
+        {
+            try { ((Action<T>)subscriber)(value); }
+            catch { Interlocked.Increment(ref subscriberFailures); }
+        }
+    }
+
+    private void Raise<T1, T2>(Action<T1, T2>? handlers, T1 first, T2 second)
+    {
+        if (handlers is null) return;
+        foreach (Delegate subscriber in handlers.GetInvocationList())
+        {
+            try { ((Action<T1, T2>)subscriber)(first, second); }
+            catch { Interlocked.Increment(ref subscriberFailures); }
+        }
+    }
 
     private static string FriendlyError(Exception exception)
     {

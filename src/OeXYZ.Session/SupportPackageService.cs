@@ -15,7 +15,8 @@ public sealed record SupportPackageRequest(
     string? LastDisconnectReason,
     IReadOnlyList<string>? RecentDiagnostics = null,
     IReadOnlyDictionary<string, long>? UnknownPackets = null,
-    bool ResolveDns = true);
+    bool ResolveDns = true,
+    SessionSnapshot? Snapshot = null);
 
 public static class SupportPackageService
 {
@@ -104,6 +105,15 @@ public static class SupportPackageService
                     await WriteTextAsync(archive, "recent-diagnostics.txt", diagnosticText, cancellationToken).ConfigureAwait(false);
                     await WriteJsonAsync(archive, "unknown-packets.json", request.UnknownPackets ?? new Dictionary<string, long>(),
                         cancellationToken).ConfigureAwait(false);
+                    SessionSnapshot? snapshot = request.Snapshot;
+                    await WriteJsonAsync(archive, "diagnostic-counters.json", new
+                    {
+                        droppedEvents = snapshot?.DroppedEvents ?? 0,
+                        droppedLogLines = snapshot?.DroppedLogLines ?? 0,
+                        subscriberFailures = snapshot?.SubscriberFailures ?? 0,
+                        outboundRejections = snapshot?.OutboundRejections ?? 0,
+                        unknownPacketOverflow = snapshot?.UnknownPacketOverflow ?? 0
+                    }, cancellationToken).ConfigureAwait(false);
                 }
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 output.Flush(flushToDisk: true);
